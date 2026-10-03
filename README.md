@@ -46,9 +46,9 @@ You need Rust (MSVC toolchain). From PowerShell:
 .\scripts\build.ps1
 ```
 
-This puts `openchroma.exe`, `openchromad.exe`, `RzChromaSDK64.dll` and
-`RzChromaSDK.dll` in `dist\`. Keep them together; the CLI looks for the DLLs
-next to itself.
+This puts `openchroma.exe`, `openchromad.exe`, `openchroma-app.exe`,
+`RzChromaSDK64.dll` and `RzChromaSDK.dll` in `dist\`. Keep them together; the
+CLI looks for the other files next to itself.
 
 ## Switching from Synapse
 
@@ -64,11 +64,11 @@ holds port 54235, so Razer's lighting stack needs to be stopped.
    ```powershell
    .\scripts\razer-services.ps1 stop
    ```
-3. Install the OpenChroma service from an **elevated** terminal, then open the UI:
+3. Install the OpenChroma service from an **elevated** terminal:
    ```
    dist\openchroma service install
-   dist\openchroma ui
    ```
+4. Open **OpenChroma** from the Start menu.
 
 The service is named **OpenChroma** ("OpenChroma Lighting Service" in
 `services.msc`). The installer does the following:
@@ -80,6 +80,7 @@ The service is named **OpenChroma** ("OpenChroma Lighting Service" in
   (`openchroma service start|stop`)
 - puts OpenChroma's SDK DLLs in System32/SysWOW64, unless Razer's DLLs are
   still there
+- adds an **OpenChroma** shortcut for the desktop app to the Start menu
 
 Run `service install` again after rebuilding to update the service. It stops
 the service, replaces the files and starts it again. `openchroma service
@@ -91,6 +92,29 @@ report it.
 
 You can also run OpenChroma without the service. `openchroma run` runs it in a
 console, and `openchroma autostart on` starts it when you sign in.
+
+## The desktop app
+
+`openchroma-app.exe` is the main way to manage OpenChroma. It has four pages:
+
+- **Lighting:** a live preview of every LED, plus your profiles, brightness, and
+  whether games can take over.
+- **Profile editor:** choose the effect, its colors, speed and direction, and
+  give any device or ARGB channel its own effect.
+- **ARGB channels:** set the LED count or the fan layout for each port, choose
+  the Chroma Link LED it shows in games, and use Identify to flash a port white.
+- **Games:** see the game in control, choose which game canvas each device shows,
+  check the SDK DLL and REST API status, and allow or block each app that has
+  used Chroma.
+
+The app is a client of the service's control API, so the service keeps working
+when the app is closed. If the service isn't running, the app offers to start
+it. The UI is built with [Slint](https://slint.dev) and its software renderer,
+so the app runs without WebView2 and without a GPU driver. That includes old
+Windows builds, VMs and Remote Desktop.
+
+The service also still serves a basic web UI at `http://127.0.0.1:54240/`
+(`openchroma ui`).
 
 ## Letting games in
 
@@ -131,11 +155,17 @@ Chroma SDK apps draw on per-category canvases. OpenChroma maps them like this:
 | Chroma Link 5         | O11 strips and ARGB channels, spread over Link LEDs 1-4         |
 
 Any category a game doesn't draw on keeps showing your profile. For example,
-if a game only lights the keyboard, the fans keep their profile colors. You can
-pin each ARGB channel to a specific Chroma Link LED in the UI. The newest SDK
-session controls the lights. When it ends, the previous one takes over again,
-and when none are left, your profile comes back. `openchroma sdk off` (or the UI
-toggle) blocks games completely.
+if a game only lights the keyboard, the fans keep their profile colors. On the
+app's Games page you can choose a different canvas for any device, or
+"Nothing" to keep that device on your profile during games. These choices are
+stored as `game_mapping` in the config. You can also pin each ARGB channel to a
+specific Chroma Link LED.
+
+The newest SDK session from an allowed app controls the lights. When it ends,
+the previous one takes over again, and when none are left, your profile comes
+back. A blocked app keeps running normally, but OpenChroma ignores its
+lighting. Apps are remembered in `%ProgramData%\OpenChroma\apps.json`.
+`openchroma sdk off` (or the app's toggle) blocks all games.
 
 ## Profiles
 
@@ -179,8 +209,7 @@ These are the problems this project was built to fix:
 
 ## Control API
 
-The web UI is one client of a small local HTTP API, and a desktop app can use
-the same API. It listens on `http://127.0.0.1:54240` only and answers only
+The desktop app and the web UI are both clients of a small local HTTP API. It listens on `http://127.0.0.1:54240` only and answers only
 requests whose `Host` is `127.0.0.1` or `localhost`. Requests that change
 anything must send an `X-OpenChroma` header with any value. A web page on
 another site can't add that header without a CORS preflight, and the API never
@@ -192,9 +221,13 @@ approves one.
 | `GET /api/config`    | full config (profiles, ARGB channels, ...)                                    |
 | `PUT /api/config`    | replace the full config; it is validated, saved, and applied immediately     |
 | `POST /api/settings` | any of `{"active_profile": "...", "brightness": 0-100, "sdk_enabled": bool}` |
+| `POST /api/identify` | `{"target": "argb:4"}` flashes a device or zone white for up to 15 s; `{"target": null}` stops |
+| `POST /api/apps`     | `{"title": "...", "allowed": bool}` allows or blocks an app that has used the SDK |
 
-`GET /api/status` is cheap enough to poll several times a second for live
-previews. The UI does this.
+`GET /api/status` also reports each device's game canvas (`game`), the apps that
+have used the SDK (`apps`), who provides the system SDK DLLs (`sdk_dlls`) and the
+current Identify target. It is cheap enough to poll several times a second for
+live previews, which is what the app does.
 
 ## Known limitations
 
@@ -223,7 +256,14 @@ cargo run -p rzchromasdk --example smoke -- <path to DLL>   # LoadLibrary test a
 To test the REST API while Razer's service still owns 54235, set
 `OPENCHROMA_SDK_PORT` to another port before starting the service.
 
+For screenshots of the app, `OPENCHROMA_APP_PAGE` (0-3) opens a page and
+`OPENCHROMA_APP_SIZE` (for example `1280x820`) sets the window size.
+
 ## License
 
 GPL-2.0-or-later. The device tables are derived from OpenRGB, which is
 GPL-2.0-or-later.
+
+The desktop app (`crates/openchroma-app`) is GPL-3.0-or-later, because it uses
+Slint under the GPLv3. It embeds the IBM Plex fonts, which are under the SIL Open
+Font License (`crates/openchroma-app/ui/fonts/LICENSE.txt`).

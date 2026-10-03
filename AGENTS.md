@@ -15,6 +15,7 @@ Windows. It is a Cargo workspace:
 | `crates/chroma-proto` | Types shared by the service and the DLL: SDK canvases, effects, pipe protocol. |
 | `crates/openchroma`   | The service (`openchromad`), the CLI (`openchroma`), web UI (`assets/index.html`). |
 | `crates/rzchromasdk`  | Drop-in replacement for Razer's `RzChromaSDK64.dll` / `RzChromaSDK.dll`.   |
+| `crates/openchroma-app` | Desktop app (Slint, software renderer). UI in `ui/*.slint`; talks only to the control API. GPL-3.0. |
 | `scripts/`            | `build.ps1` (release build into `dist\`), `razer-services.ps1`.            |
 
 Data flow: games → DLL → named pipe, or REST on `:54235` → SDK sessions →
@@ -72,6 +73,11 @@ DLL target is `i686-pc-windows-msvc`. If you change `rzchromasdk` or
   `Program Files`, never from user-writable paths. Keep the control API bound
   to `127.0.0.1`, including the `Host` check and the `X-OpenChroma` header
   requirement for writes.
+- **The desktop app depends only on the control API.** Never link it to device
+  or session internals. If it needs something new, add an endpoint and
+  document it.
+- **The app must keep working without a GPU or WebView2.** Keep Slint on
+  `renderer-software`, and don't add GPU-only renderers or web views.
 - **The control API is a public contract** for the UI and future apps. When an
   endpoint changes, update the README's "Control API" table in the same
   commit.
@@ -91,9 +97,9 @@ History follows [Conventional Commits](https://www.conventionalcommits.org/):
 
 - **Types:** `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`,
   `chore`.
-- **Scopes:** `razer-hid`, `chroma-proto`, `openchroma`, `rzchromasdk`,
-  `ui`, `service`, `scripts`, `docs`. Leave the scope out when a change spans
-  the whole project.
+- **Scopes:** `razer-hid`, `chroma-proto`, `openchroma`, `rzchromasdk`, `app`
+  (the desktop app), `ui` (the web UI), `service`, `scripts`, `docs`. Leave the
+  scope out when a change spans the whole project.
 - **Summary:** imperative mood, lowercase, no trailing period, at most 72
   characters. Example: `fix(rzchromasdk): reconnect when the service
   restarts`.
