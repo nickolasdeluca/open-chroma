@@ -81,6 +81,8 @@ pub struct DeviceStatus {
     /// Current colors per row as "#rrggbb", for the UI preview.
     pub preview: Vec<Vec<String>>,
     pub zones: Vec<Option<String>>,
+    /// The game canvas this device shows, if any.
+    pub game: Option<Category>,
 }
 
 type Frame = Vec<Vec<Rgb>>;
@@ -200,6 +202,7 @@ impl Slot {
             error: None,
             preview: Vec::new(),
             zones: layout.row_zones.clone(),
+            game: layout.game,
         };
         Slot { info, layout, writer: None, retry_at: Instant::now(), status }
     }
@@ -269,6 +272,7 @@ pub fn run(shared: Arc<Shared>) {
                     slot.writer = None;
                 }
                 slot.status.zones = layout.row_zones.clone();
+                slot.status.game = layout.game;
                 slot.layout = layout;
             }
         }
@@ -353,7 +357,8 @@ fn render(shared: &Shared, config: &Config, slots: &mut BTreeMap<String, Slot>) 
 
 /// Color an LED from the game's canvas, if the game has drawn on it.
 fn sdk_color(session: &Session, led: &Led) -> Option<Rgb> {
-    let category = match led.source {
+    let source = led.source?;
+    let category = match source {
         Source::Cell(c, _) | Source::Average(c) => c,
     };
     let (effect, since) = session.shown.get(&category)?;
@@ -361,7 +366,7 @@ fn sdk_color(session: &Session, led: &Led) -> Option<Rgb> {
     Some(match effect {
         SdkEffect::None => Rgb::BLACK,
         SdkEffect::Static { color } => color::from_colorref(*color),
-        SdkEffect::Custom { colors } => match led.source {
+        SdkEffect::Custom { colors } => match source {
             Source::Cell(_, i) => colors.get(i).map_or(Rgb::BLACK, |&c| color::from_colorref(c)),
             Source::Average(_) => average(colors),
         },
@@ -397,13 +402,7 @@ fn average(colors: &[u32]) -> Rgb {
 pub fn available_categories(shared: &Shared) -> Vec<Category> {
     let devices = lock(&shared.devices);
     let mut cats = Vec::new();
-    for d in devices.iter().filter(|d| d.connected) {
-        let c = match d.id {
-            "keyboard" => Category::Keyboard,
-            "mouse" => Category::Mouse,
-            "mousepad" => Category::Mousepad,
-            _ => Category::ChromaLink,
-        };
+    for c in devices.iter().filter(|d| d.connected).filter_map(|d| d.game) {
         if !cats.contains(&c) {
             cats.push(c);
         }

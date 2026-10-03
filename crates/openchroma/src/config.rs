@@ -26,6 +26,39 @@ pub struct Config {
     pub profiles: Vec<Profile>,
     /// The six channels of the Chroma Addressable RGB Controller.
     pub argb_channels: Vec<ArgbChannel>,
+    /// Which game canvas each device (by id) shows while a game has control.
+    /// Devices not listed show their natural canvas.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub game_mapping: BTreeMap<String, GameSource>,
+}
+
+/// A Chroma SDK canvas a device can show during games, or none (the device
+/// keeps the profile even while a game runs).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GameSource {
+    Keyboard,
+    Mouse,
+    Mousepad,
+    Headset,
+    Keypad,
+    ChromaLink,
+    None,
+}
+
+impl GameSource {
+    pub fn category(self) -> Option<chroma_proto::Category> {
+        use chroma_proto::Category as C;
+        Some(match self {
+            GameSource::Keyboard => C::Keyboard,
+            GameSource::Mouse => C::Mouse,
+            GameSource::Mousepad => C::Mousepad,
+            GameSource::Headset => C::Headset,
+            GameSource::Keypad => C::Keypad,
+            GameSource::ChromaLink => C::ChromaLink,
+            GameSource::None => return None,
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -77,6 +110,7 @@ impl Default for Config {
             argb_channels: (1..=6)
                 .map(|i| ArgbChannel { name: format!("Channel {i}"), leds: 0, fans: vec![], chroma_link_led: None })
                 .collect(),
+            game_mapping: BTreeMap::new(),
         }
     }
 }
