@@ -78,6 +78,23 @@ pub fn install_system() -> io::Result<Vec<String>> {
     Ok(done)
 }
 
+/// Install or update OpenChroma's DLLs from `dir` into the system folders,
+/// but leave Razer's DLLs alone; replacing those stays an explicit
+/// `sdk install`.
+pub fn install_system_if_free(dir: &Path) -> io::Result<Vec<String>> {
+    let mut done = Vec::new();
+    for (name, target) in system_targets() {
+        if target.exists() && !is_ours(&target) {
+            done.push(format!("left Razer's {} in place (`openchroma sdk install` replaces it)", target.display()));
+            continue;
+        }
+        let ours = dir.join(name);
+        fs::copy(&ours, &target).map_err(|e| explain(e, &target))?;
+        done.push(format!("installed {}", target.display()));
+    }
+    Ok(done)
+}
+
 pub fn uninstall_system() -> io::Result<Vec<String>> {
     let mut done = Vec::new();
     for (name, target) in system_targets() {

@@ -11,6 +11,7 @@ pub mod layout;
 pub mod logging;
 pub mod pipe;
 pub mod sdk;
+pub mod service;
 pub mod synapse;
 
 use std::thread;

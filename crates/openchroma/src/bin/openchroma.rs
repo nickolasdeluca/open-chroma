@@ -15,7 +15,10 @@ OpenChroma - open Razer Chroma lighting service
 
 usage: openchroma <command>
 
-  run                      run the service in this console
+  service install          install/update the Windows service (admin)
+  service uninstall        remove the Windows service (admin)
+  service start|stop       start or stop the service
+  run                      run in this console instead of as a service
   devices                  probe supported devices directly (read-only)
   status                   show what the running service sees
   profile <name>           switch the active lighting profile
@@ -24,7 +27,7 @@ usage: openchroma <command>
   sdk status               show which RzChromaSDK DLLs are installed
   sdk install [<game dir>] install the SDK DLL system-wide (admin) or into one game
   sdk uninstall [<dir>]    restore Razer's DLL (system-wide) or a game's original
-  autostart on|off         start the service when you sign in
+  autostart on|off         start at sign-in instead of as a service
   ui                       open the web UI
 
 The web UI is at http://127.0.0.1:54240/ while the service runs.";
@@ -34,6 +37,10 @@ fn main() -> ExitCode {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let result = match args.as_slice() {
         ["run"] => openchroma::run_service(),
+        ["service", "install"] => openchroma::service::install().map(|lines| lines.iter().for_each(|l| println!("{l}"))),
+        ["service", "uninstall"] => openchroma::service::uninstall().map(|lines| lines.iter().for_each(|l| println!("{l}"))),
+        ["service", "start"] => openchroma::service::start().map(|m| println!("{m}")),
+        ["service", "stop"] => openchroma::service::stop().map(|m| println!("{m}")),
         ["devices"] => devices(),
         ["status"] => status(),
         ["profile", name] => settings(json!({"active_profile": name})),
@@ -99,7 +106,7 @@ fn devices() -> Result<(), String> {
 
 /// Tiny HTTP/1.0 client for the local control API.
 fn request(method: &str, path: &str, body: Option<&Value>) -> Result<Value, String> {
-    let mut stream = TcpStream::connect(("127.0.0.1", UI_PORT)).map_err(|_| "the OpenChroma service is not running".to_string())?;
+    let mut stream = TcpStream::connect(("127.0.0.1", UI_PORT)).map_err(|_| not_running())?;
     stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
     let body = body.map(Value::to_string).unwrap_or_default();
     let req = format!(
@@ -117,12 +124,25 @@ fn request(method: &str, path: &str, body: Option<&Value>) -> Result<Value, Stri
     Ok(value)
 }
 
+fn not_running() -> String {
+    match openchroma::service::state() {
+        Ok(Some(state)) => format!("the OpenChroma service is {state:?}; start it with `openchroma service start`"),
+        _ => "OpenChroma is not running; install the service with `openchroma service install` (as administrator)".into(),
+    }
+}
+
 fn settings(v: Value) -> Result<(), String> {
     request("POST", "/api/settings", Some(&v)).map(|_| println!("ok"))
 }
 
 fn status() -> Result<(), String> {
     let s = request("GET", "/api/status", None)?;
+    let service = match openchroma::service::state() {
+        Ok(Some(state)) => format!("{state:?}"),
+        Ok(None) => "not installed (running standalone)".into(),
+        Err(e) => e,
+    };
+    println!("service:     {service}");
     println!("profile:     {} (brightness {}%)", s["active_profile"].as_str().unwrap_or("?"), s["brightness"]);
     println!(
         "chroma sdk:  games {}; REST API {}",
