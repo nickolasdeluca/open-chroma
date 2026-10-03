@@ -1,0 +1,24 @@
+[package]
+name = "openchroma"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Open replacement for Razer Synapse lighting and the Chroma SDK service"
+
+[dependencies]
+razer-hid = { path = "../razer-hid" }
+chroma-proto = { path = "../chroma-proto" }
+hidapi = { version = "2", default-features = false, features = ["windows-native"] }
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+tiny_http = "0.12"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_IO", "Win32_System_SystemInformation"] }
+
+[[bin]]
+name = "openchroma"
+path = "src/bin/openchroma.rs"
+
+[[bin]]
+name = "openchromad"
+path = "src/bin/openchromad.rs"
