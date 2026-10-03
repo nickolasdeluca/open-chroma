@@ -1,6 +1,7 @@
 # Build release binaries and assemble them in .\dist
 #   openchroma.exe       CLI (and `openchroma run` for a console service)
 #   openchromad.exe      windowless service, used for autostart
+#   openchroma-app.exe   desktop app
 #   RzChromaSDK64.dll    Chroma SDK replacement for 64-bit games
 #   RzChromaSDK.dll      Chroma SDK replacement for 32-bit games
 # Native tools write progress to stderr, which Windows PowerShell 5.1 turns
@@ -10,7 +11,7 @@ Push-Location $root
 try {
     rustup target add i686-pc-windows-msvc 2>&1 | Out-Null
     if ($LASTEXITCODE) { throw 'rustup failed' }
-    cargo build --release -p openchroma -p rzchromasdk
+    cargo build --release -p openchroma -p rzchromasdk -p openchroma-app
     if ($LASTEXITCODE) { throw 'x64 build failed' }
     cargo build --release -p rzchromasdk --target i686-pc-windows-msvc
     if ($LASTEXITCODE) { throw 'x86 build failed' }
@@ -21,7 +22,7 @@ try {
     # A running service locks its exe. Stop only instances started from dist
     # (not dev builds elsewhere), and only now that the build succeeded, so
     # the lights are out for as short a time as possible.
-    $running = @(Get-Process -Name openchroma, openchromad -ErrorAction SilentlyContinue |
+    $running = @(Get-Process -Name openchroma, openchromad, openchroma-app -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -and $_.Path.StartsWith($dist, [StringComparison]::OrdinalIgnoreCase) })
     if ($running) {
         Write-Host "Stopping running OpenChroma ($($running.Name -join ', '))"
@@ -29,13 +30,13 @@ try {
         $running | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
     }
 
-    Copy-Item target\release\openchroma.exe, target\release\openchromad.exe $dist -ErrorAction Stop
+    Copy-Item target\release\openchroma.exe, target\release\openchromad.exe, target\release\openchroma-app.exe $dist -ErrorAction Stop
     Copy-Item target\release\rzchromasdk.dll (Join-Path $dist 'RzChromaSDK64.dll') -ErrorAction Stop
     Copy-Item target\i686-pc-windows-msvc\release\rzchromasdk.dll (Join-Path $dist 'RzChromaSDK.dll') -ErrorAction Stop
     Get-ChildItem $dist | Format-Table Name, Length
 
-    if ($running) {
-        # Bring it back windowless, whichever way it was running.
+    if ($running | Where-Object Name -ne 'openchroma-app') {
+        # Bring the service back windowless, whichever way it was running.
         Start-Process (Join-Path $dist 'openchromad.exe')
         Write-Host 'Restarted openchromad'
     }

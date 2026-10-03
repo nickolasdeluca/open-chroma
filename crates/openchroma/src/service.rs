@@ -29,7 +29,7 @@ const DISPLAY_NAME: &str = "OpenChroma Lighting Service";
 const DESCRIPTION: &str = "Drives Razer Chroma devices and serves the Chroma SDK to games.";
 
 /// Files the service install copies from the CLI's folder.
-const FILES: [&str; 4] = ["openchromad.exe", "openchroma.exe", install::DLL64, install::DLL32];
+const FILES: [&str; 5] = ["openchromad.exe", "openchroma.exe", "openchroma-app.exe", install::DLL64, install::DLL32];
 
 /// Win32 error when the process was not started by the service manager.
 const ERROR_FAILED_SERVICE_CONTROLLER_CONNECT: i32 = 1063;
@@ -249,6 +249,11 @@ pub fn install() -> Result<Vec<String>, String> {
         done.push(format!("warning: could not let users start/stop the service: {}", String::from_utf8_lossy(&sd.stdout).trim()));
     }
 
+    match start_menu_shortcut(Some(&target.join("openchroma-app.exe"))) {
+        Ok(()) => done.push("added OpenChroma to the Start menu".into()),
+        Err(e) => done.push(format!("warning: could not add the Start menu shortcut: {e}")),
+    }
+
     // The service replaces sign-in autostart.
     if install::set_autostart(false).is_ok() {
         done.push("removed the old sign-in autostart entry".into());
@@ -286,11 +291,39 @@ pub fn uninstall() -> Result<Vec<String>, String> {
         }
     }
     let _ = fs::remove_dir(&dir);
+    let _ = start_menu_shortcut(None);
     done.push(format!(
         "kept {} and any SDK DLLs in System32 (`openchroma sdk uninstall` removes those)",
         crate::config::Config::dir().display()
     ));
     Ok(done)
+}
+
+/// Create (`Some(target)`) or remove (`None`) the all-users Start menu
+/// shortcut for the desktop app.
+fn start_menu_shortcut(target: Option<&Path>) -> io::Result<()> {
+    let programs = PathBuf::from(std::env::var_os("ProgramData").unwrap_or_else(|| r"C:\ProgramData".into()))
+        .join(r"Microsoft\Windows\Start Menu\Programs");
+    let link = programs.join("OpenChroma.lnk");
+    let Some(target) = target else {
+        return match fs::remove_file(&link) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        };
+    };
+    // WScript.Shell is the simplest way to write a .lnk without COM bindings.
+    let script = format!(
+        "$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{}'); $s.TargetPath = '{}'; $s.WorkingDirectory = '{}'; $s.Description = 'OpenChroma lighting'; $s.Save()",
+        link.display(),
+        target.display(),
+        target.parent().unwrap_or(target).display()
+    );
+    let out = Command::new("powershell").args(["-NoProfile", "-NonInteractive", "-Command", &script]).output()?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(String::from_utf8_lossy(&out.stderr).trim().to_string()))
+    }
 }
 
 fn control(start: bool) -> Result<String, String> {
