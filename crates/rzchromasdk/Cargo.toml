@@ -1,0 +1,13 @@
+[package]
+name = "rzchromasdk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Drop-in replacement for Razer's RzChromaSDK DLL that forwards to OpenChroma"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+chroma-proto = { path = "../chroma-proto" }
+serde_json.workspace = true
