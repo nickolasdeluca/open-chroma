@@ -1,0 +1,8 @@
+[package]
+name = "asus-aura"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+hidapi = { version = "2", default-features = false, features = ["windows-native"] }
