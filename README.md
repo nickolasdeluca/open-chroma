@@ -1,0 +1,229 @@
+# OpenChroma
+
+An open replacement for Razer Synapse's lighting and the Razer Chroma SDK
+service on Windows. It talks to Razer devices directly over USB HID, runs your
+own lighting profiles when you're not gaming, and lets Chroma-enabled games take
+over the lights. Games can connect through either the native SDK DLL or the
+REST API.
+
+```
+ games (native)                    games / apps (REST)
+ RzChromaSDK64.dll / RzChromaSDK.dll   http://localhost:54235/razer/chromasdk
+        │  (OpenChroma's drop-in DLL)          │
+        └──── named pipe ────┐   ┌─────────────┘
+                             ▼   ▼
+                     openchromad (service)
+       profiles · SDK sessions · compositor · web UI (127.0.0.1:54240)
+                             │
+          one writer thread per device, USB HID feature reports
+                             ▼
+   keyboard · mouse · mousepad · case · ARGB controller
+```
+
+## Supported devices
+
+Verified on real hardware:
+
+| PID    | Device                                  | LEDs                        |
+|--------|-----------------------------------------|-----------------------------|
+| 0x0221 | Razer BlackWidow Chroma V2              | 6 × 22 matrix               |
+| 0x0099 | Razer Basilisk V3                       | logo, scroll wheel, 9 underglow |
+| 0x0C02 | Razer Goliathus Chroma Extended         | 1 zone                      |
+| 0x0F13 | Lian Li O11 Dynamic Razer Edition       | 4 strips × 16               |
+| 0x0F1F | Razer Chroma Addressable RGB Controller | 6 channels × up to 80       |
+
+Device protocol details (matrix sizes, transaction ids, which HID interface takes
+commands) come from [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) and
+[OpenRazer](https://github.com/openrazer/openrazer). To add a device, append an
+entry to `crates/razer-hid/src/devices.rs` and a layout in
+`crates/openchroma/src/layout.rs`.
+
+## Building
+
+You need Rust (MSVC toolchain). From PowerShell:
+
+```powershell
+.\scripts\build.ps1
+```
+
+This puts `openchroma.exe`, `openchromad.exe`, `RzChromaSDK64.dll` and
+`RzChromaSDK.dll` in `dist\`. Keep them together; the CLI looks for the DLLs
+next to itself.
+
+## Switching from Synapse
+
+Synapse and OpenChroma both write to the same devices, and Razer's SDK service
+holds port 54235, so Razer's lighting stack needs to be stopped.
+
+1. Check that OpenChroma sees everything. This is read-only:
+   ```
+   dist\openchroma devices
+   ```
+2. Stop Razer's lighting stack from an **elevated** PowerShell. `stop` lasts until
+   reboot. `disable` keeps it off. `restore` undoes either one.
+   ```powershell
+   .\scripts\razer-services.ps1 stop
+   ```
+3. Install the OpenChroma service from an **elevated** terminal, then open the UI:
+   ```
+   dist\openchroma service install
+   dist\openchroma ui
+   ```
+
+The service is named **OpenChroma** ("OpenChroma Lighting Service" in
+`services.msc`). The installer does the following:
+
+- copies the binaries to `C:\Program Files\OpenChroma`
+- registers the service to start at boot as LocalSystem, and to restart
+  automatically if it fails
+- lets signed-in users start and stop it without admin rights
+  (`openchroma service start|stop`)
+- puts OpenChroma's SDK DLLs in System32/SysWOW64, unless Razer's DLLs are
+  still there
+
+Run `service install` again after rebuilding to update the service. It stops
+the service, replaces the files and starts it again. `openchroma service
+uninstall` removes the service and keeps your config.
+
+On first start, OpenChroma imports the ARGB controller's channel layout (LED
+counts, fan groups, names) from Synapse's logs, because the controller can't
+report it.
+
+You can also run OpenChroma without the service. `openchroma run` runs it in a
+console, and `openchroma autostart on` starts it when you sign in.
+
+## Letting games in
+
+**REST API games** (including many Unity, web, and newer titles) work as soon as
+OpenChroma owns port 54235. You don't need to install anything else.
+
+**Native SDK games** load `RzChromaSDK64.dll` (64-bit) or `RzChromaSDK.dll`
+(32-bit) by name. Install OpenChroma's DLLs in one of these places:
+
+```
+# system-wide (elevated; Razer's originals are backed up to %ProgramData%\OpenChroma\backup)
+dist\openchroma sdk install
+dist\openchroma sdk uninstall      # restores Razer's DLLs
+
+# a single game (Windows loads DLLs from the game folder first)
+dist\openchroma sdk install "D:\Games\SomeGame"
+dist\openchroma sdk uninstall "D:\Games\SomeGame"
+
+dist\openchroma sdk status
+```
+
+Razer installers and updates may put their DLL back, so check `sdk status` after
+updating Synapse.
+
+The DLL never blocks the game. Effects go to a background thread. If the
+service restarts, the DLL reconnects within about 2 seconds and replays what
+the game was showing. If a game crashes, its session ends right away.
+
+### How game lighting maps to your devices
+
+Chroma SDK apps draw on per-category canvases. OpenChroma maps them like this:
+
+| Canvas                | Your hardware                                                   |
+|-----------------------|-----------------------------------------------------------------|
+| Keyboard 6×22         | BlackWidow Chroma V2, 1:1                                       |
+| Mouse 9×7             | Basilisk V3: logo (7,3), wheel (2,3), underglow around the edge |
+| Mousepad 20 (or 15)   | Goliathus: average of the pad's LEDs                            |
+| Chroma Link 5         | O11 strips and ARGB channels, spread over Link LEDs 1-4         |
+
+Any category a game doesn't draw on keeps showing your profile. For example,
+if a game only lights the keyboard, the fans keep their profile colors. You can
+pin each ARGB channel to a specific Chroma Link LED in the UI. The newest SDK
+session controls the lights. When it ends, the previous one takes over again,
+and when none are left, your profile comes back. `openchroma sdk off` (or the UI
+toggle) blocks games completely.
+
+## Profiles
+
+Edit profiles in the UI or in `%ProgramData%\OpenChroma\config.json`. The available
+effects are `off`, `static`, `breathing`, `spectrum`, `wave` (rainbow),
+`gradient`, `color_wave`, and `starlight`. A profile can override the effect for
+a device or zone:
+
+```json
+{
+  "name": "Desk",
+  "effect": { "type": "wave", "period": 4.0, "repeat": 1.0, "reverse": false },
+  "overrides": {
+    "keyboard": { "type": "static", "color": "#ffffff" },
+    "argb:6":   { "type": "breathing", "colors": ["#ff2000"], "period": 5.0 }
+  }
+}
+```
+
+Override keys are `keyboard`, `mouse`, `mousepad`, `case`, `argb`, `case:1`-`case:4`,
+and `argb:1`-`argb:6`. All effects run in software on every device, so the
+devices stay in sync. Nothing is written to device flash, so unplugging a device
+returns it to its own default.
+
+CLI shortcuts while the service runs: `openchroma status`,
+`openchroma profile "Ocean"`, and `openchroma brightness 40`.
+
+## Reliability
+
+These are the problems this project was built to fix:
+
+- Every device has its own writer thread, so one stalled device doesn't freeze
+  the others. Each device can take full frames at 55 fps or more.
+- Devices are rescanned every 2 s. If a write fails, that device is dropped and
+  reopened, which covers unplugging, USB resets, and sleep and resume.
+- The full frame is re-sent every 5 s even if nothing changed. This restores
+  lighting after a device resets itself.
+- If another OpenChroma instance is already running, the new one refuses to
+  start, so two instances never fight over the devices.
+- Logs go to `%ProgramData%\OpenChroma\openchroma.log`.
+
+## Control API
+
+The web UI is one client of a small local HTTP API, and a desktop app can use
+the same API. It listens on `http://127.0.0.1:54240` only and answers only
+requests whose `Host` is `127.0.0.1` or `localhost`. Requests that change
+anything must send an `X-OpenChroma` header with any value. A web page on
+another site can't add that header without a CORS preflight, and the API never
+approves one.
+
+| Method & path        | Body / result                                                                 |
+|----------------------|-------------------------------------------------------------------------------|
+| `GET /api/status`    | devices (connected, firmware, live LED colors), SDK sessions, active profile, brightness |
+| `GET /api/config`    | full config (profiles, ARGB channels, ...)                                    |
+| `PUT /api/config`    | replace the full config; it is validated, saved, and applied immediately     |
+| `POST /api/settings` | any of `{"active_profile": "...", "brightness": 0-100, "sdk_enabled": bool}` |
+
+`GET /api/status` is cheap enough to poll several times a second for live
+previews. The UI does this.
+
+## Known limitations
+
+- **DLL signature checks.** Some games built on Razer's newer C++ SDK wrapper
+  (`CChromaEditorLibrary`) check that `RzChromaSDK64.dll` is signed by Razer
+  before loading it. They return `RZRESULT_DLL_INVALID_SIGNATURE`. Those games
+  will reject OpenChroma's DLL, and no third-party DLL can get around that.
+  Games that use the REST API or load the DLL directly aren't affected.
+- Reactive effects (keys lighting up when pressed) are accepted but shown as
+  "off". The service doesn't see your key presses.
+- Only the HTTP REST endpoint is implemented. The HTTPS endpoint on
+  `chromasdk.io:54236` isn't.
+- Basilisk V3 underglow LED order and the Chroma Link zone spread are best
+  guesses. If something lights up in the wrong place, adjust the tables in
+  `crates/openchroma/src/layout.rs`.
+
+## Development
+
+```
+cargo test --workspace
+cargo run -p razer-hid --example probe          # read-only firmware/serial query
+cargo run -p razer-hid --example bench          # frame throughput (changes lights)
+cargo run -p rzchromasdk --example smoke -- <path to DLL>   # LoadLibrary test against a running service
+```
+
+To test the REST API while Razer's service still owns 54235, set
+`OPENCHROMA_SDK_PORT` to another port before starting the service.
+
+## License
+
+GPL-2.0-or-later. The device tables are derived from OpenRGB, which is
+GPL-2.0-or-later.
