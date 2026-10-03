@@ -121,7 +121,7 @@ fn handle_sdk(mut req: Request, shared: &Shared) {
                     _ => 1,
                 },
             };
-            let id = lock(&shared.sessions).open(app, Client::Rest);
+            let id = shared.open_session(app, Client::Rest);
             reply(req, 200, json!({"sessionid": id, "uri": format!("http://localhost:{}/sid/{id}/chromasdk", sdk_port())}))
         }
         (method, ["sid", id, "chromasdk", rest @ ..]) => {
@@ -286,6 +286,14 @@ fn handle_ui(mut req: Request, shared: &Shared) {
                 Err(e) => reply(req, 500, json!({"error": e.to_string()})),
             }
         }
+        (Method::Post, "/api/apps") if trusted => {
+            let b = body(&mut req);
+            match (b["title"].as_str(), b["allowed"].as_bool()) {
+                (Some(title), Some(allowed)) if shared.set_app_allowed(title, allowed) => reply(req, 200, json!({"ok": true})),
+                (Some(title), Some(_)) => reply(req, 404, json!({"error": format!("no app named {title:?}")})),
+                _ => reply(req, 400, json!({"error": "expected {\"title\": string, \"allowed\": bool}"})),
+            }
+        }
         (Method::Put | Method::Post, _) => reply(req, 403, json!({"error": "missing X-OpenChroma header"})),
         _ => reply(req, 404, json!({"error": "not found"})),
     }
@@ -304,6 +312,7 @@ pub fn status(shared: &Shared) -> Value {
                 "title": s.app.title,
                 "client": s.client,
                 "active": Some(s.id) == active && cfg.sdk_enabled,
+                "allowed": s.allowed,
                 "categories": s.shown.keys().collect::<Vec<_>>(),
                 "seconds": s.started.elapsed().as_secs(),
             })
@@ -319,6 +328,7 @@ pub fn status(shared: &Shared) -> Value {
         "sdk_enabled": cfg.sdk_enabled,
         "sdk_port_bound": SDK_PORT_BOUND.load(Ordering::SeqCst),
         "sdk_port": sdk_port(),
+        "apps": lock(&shared.apps).list(),
     })
 }
 

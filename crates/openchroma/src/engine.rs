@@ -19,11 +19,12 @@ use hidapi::HidApi;
 use razer_hid::{Device, DeviceInfo, DeviceKind, Rgb};
 use serde::Serialize;
 
+use crate::apps::Apps;
 use crate::color::{self, Color};
 use crate::config::Config;
 use crate::effects::Effect;
 use crate::layout::{self, DeviceLayout, Led, Source};
-use crate::sdk::{Session, Sessions};
+use crate::sdk::{Client, Session, Sessions};
 
 const RESCAN_INTERVAL: Duration = Duration::from_secs(2);
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
@@ -39,6 +40,7 @@ pub struct Shared {
     pub config_rev: AtomicU64,
     pub sessions: Mutex<Sessions>,
     pub devices: Mutex<Vec<DeviceStatus>>,
+    pub apps: Mutex<Apps>,
     pub started: Instant,
 }
 
@@ -49,6 +51,7 @@ impl Shared {
             config_rev: AtomicU64::new(0),
             sessions: Mutex::new(Sessions::default()),
             devices: Mutex::new(Vec::new()),
+            apps: Mutex::new(Apps::load()),
             started: Instant::now(),
         })
     }
@@ -66,6 +69,23 @@ impl Shared {
         };
         self.config_rev.fetch_add(1, Ordering::SeqCst);
         snapshot.save()
+    }
+
+    /// Start an SDK session, remembering the app and honoring the user's
+    /// allow/block choice for it.
+    pub fn open_session(&self, app: chroma_proto::AppInfo, client: Client) -> u64 {
+        let kind = if matches!(client, Client::Rest) { "rest" } else { "native" };
+        let allowed = lock(&self.apps).seen(&app.title, kind);
+        lock(&self.sessions).open(app, client, allowed)
+    }
+
+    /// Returns false if the app has never connected.
+    pub fn set_app_allowed(&self, title: &str, allowed: bool) -> bool {
+        let known = lock(&self.apps).set_allowed(title, allowed);
+        if known {
+            lock(&self.sessions).set_allowed(title, allowed);
+        }
+        known
     }
 }
 

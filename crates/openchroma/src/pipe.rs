@@ -113,7 +113,7 @@ fn serve_client(pipe: File, shared: &Shared) {
     let mut lines = BufReader::new(pipe).lines();
 
     let session = match lines.next().and_then(Result::ok).and_then(|l| serde_json::from_str::<ClientMsg>(&l).ok()) {
-        Some(ClientMsg::Hello { app, pid, exe }) => lock(&shared.sessions).open(app, Client::Native { pid, exe }),
+        Some(ClientMsg::Hello { app, pid, exe }) => shared.open_session(app, Client::Native { pid, exe }),
         _ => return,
     };
     let welcome = Welcome { categories: engine::available_categories(shared) };
