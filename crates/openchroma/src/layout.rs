@@ -4,6 +4,7 @@
 use chroma_proto::Category;
 use razer_hid::{DeviceKind, DeviceSpec};
 
+use crate::backend::Model;
 use crate::config::Config;
 use crate::effects::LedPos;
 
@@ -22,7 +23,7 @@ pub struct Led {
     pub source: Option<Source>,
 }
 
-/// LEDs grouped by device matrix row, matching `razer_hid::Device::set_frame`.
+/// LEDs grouped by device row, matching `backend::Device::set_frame`.
 #[derive(Clone, Debug)]
 pub struct DeviceLayout {
     /// Short id used in profile overrides.
@@ -90,10 +91,32 @@ fn link_led(zone: usize) -> usize {
     1 + zone % 4
 }
 
-pub fn build(spec: &DeviceSpec, config: &Config) -> DeviceLayout {
+type Rows = (Vec<Vec<Led>>, Vec<Option<String>>);
+
+pub fn build(model: Model, config: &Config) -> DeviceLayout {
+    let (id, natural, (mut rows, row_zones)) = match model {
+        Model::Razer(spec) => {
+            let id = device_id(spec.kind);
+            (id, natural_category(spec.kind), razer_rows(spec, id, config))
+        }
+    };
+
+    let game = config.game_mapping.get(id).map_or(Some(natural), |g| g.category());
+    if game != Some(natural) {
+        let single_led = rows.iter().map(Vec::len).sum::<usize>() == 1;
+        let n = rows.len();
+        for (r, row) in rows.iter_mut().enumerate() {
+            for led in row {
+                led.source = game.map(|c| resample(c, led.pos, r, n, single_led));
+            }
+        }
+    }
+    DeviceLayout { id, rows, row_zones, game }
+}
+
+fn razer_rows(spec: &DeviceSpec, id: &str, config: &Config) -> Rows {
     let kind = spec.kind;
-    let id = device_id(kind);
-    let (mut rows, row_zones): (Vec<Vec<Led>>, Vec<Option<String>>) = match kind {
+    match kind {
         DeviceKind::Keyboard => {
             let (r, c) = (spec.rows as usize, spec.cols as usize);
             let (_, kc) = Category::Keyboard.dims();
@@ -159,20 +182,7 @@ pub fn build(spec: &DeviceSpec, config: &Config) -> DeviceLayout {
                 .collect();
             (rows, (0..spec.rows as usize).map(|ch| Some(format!("{id}:{}", ch + 1))).collect())
         }
-    };
-
-    let natural = natural_category(kind);
-    let game = config.game_mapping.get(id).map_or(Some(natural), |g| g.category());
-    if game != Some(natural) {
-        let single_led = rows.iter().map(Vec::len).sum::<usize>() == 1;
-        let n = rows.len();
-        for (r, row) in rows.iter_mut().enumerate() {
-            for led in row {
-                led.source = game.map(|c| resample(c, led.pos, r, n, single_led));
-            }
-        }
     }
-    DeviceLayout { id, rows, row_zones, game }
 }
 
 #[cfg(test)]
@@ -184,7 +194,7 @@ mod tests {
         let mut cfg = Config::default();
         cfg.argb_channels[3].leds = 24;
         for spec in razer_hid::DEVICES {
-            let layout = build(spec, &cfg);
+            let layout = build(Model::Razer(spec), &cfg);
             assert!(layout.rows.len() <= spec.rows as usize, "{}", spec.name);
             assert_eq!(layout.rows.len(), layout.row_zones.len(), "{}", spec.name);
             for row in &layout.rows {
@@ -205,7 +215,7 @@ mod tests {
         cfg.game_mapping.insert("mouse".into(), GameSource::Keyboard);
         cfg.game_mapping.insert("keyboard".into(), GameSource::None);
         cfg.game_mapping.insert("mousepad".into(), GameSource::ChromaLink);
-        let layout = |pid| build(razer_hid::devices::spec_for(pid).unwrap(), &cfg);
+        let layout = |pid| build(Model::Razer(razer_hid::devices::spec_for(pid).unwrap()), &cfg);
 
         let mouse = layout(0x0099);
         assert_eq!(mouse.game, Some(Category::Keyboard));
@@ -224,7 +234,7 @@ mod tests {
         cfg.argb_channels[3].leds = 24;
         cfg.argb_channels[5].leds = 24;
         let spec = razer_hid::devices::spec_for(0x0F1F).unwrap();
-        let lens: Vec<_> = build(spec, &cfg).rows.iter().map(Vec::len).collect();
+        let lens: Vec<_> = build(Model::Razer(spec), &cfg).rows.iter().map(Vec::len).collect();
         assert_eq!(lens, [0, 0, 0, 24, 0, 24]);
     }
 }

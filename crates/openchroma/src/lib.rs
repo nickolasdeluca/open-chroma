@@ -2,6 +2,7 @@
 //! SDK service.
 
 pub mod apps;
+pub mod backend;
 pub mod client;
 pub mod color;
 pub mod config;

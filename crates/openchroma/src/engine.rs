@@ -16,10 +16,11 @@ use std::time::{Duration, Instant};
 
 use chroma_proto::{Category, SdkEffect};
 use hidapi::HidApi;
-use razer_hid::{Device, DeviceInfo, DeviceKind, Rgb};
+use razer_hid::Rgb;
 use serde::Serialize;
 
 use crate::apps::Apps;
+use crate::backend::{self, Device, DeviceInfo, Model};
 use crate::color::{self, Color};
 use crate::config::Config;
 use crate::effects::Effect;
@@ -130,7 +131,7 @@ impl Writer {
         let mailbox = Arc::new((Mutex::new(Mailbox::default()), Condvar::new()));
         let alive = Arc::new(AtomicBool::new(true));
         let error = Arc::new(Mutex::new(None));
-        let name = device.spec().name;
+        let name = device.name();
         {
             let (mailbox, alive, error) = (mailbox.clone(), alive.clone(), error.clone());
             thread::Builder::new()
@@ -166,7 +167,7 @@ impl Drop for Writer {
     }
 }
 
-fn write_loop(device: &Device, mailbox: &(Mutex<Mailbox>, Condvar)) -> razer_hid::Result<()> {
+fn write_loop(device: &Device, mailbox: &(Mutex<Mailbox>, Condvar)) -> backend::Result<()> {
     let (m, cv) = mailbox;
     let mut sent: Option<Frame> = None;
     let mut last_full = Instant::now();
@@ -208,6 +209,7 @@ fn write_loop(device: &Device, mailbox: &(Mutex<Mailbox>, Condvar)) -> razer_hid
 
 struct Slot {
     info: DeviceInfo,
+    model: Model,
     layout: DeviceLayout,
     writer: Option<Writer>,
     retry_at: Instant,
@@ -216,12 +218,12 @@ struct Slot {
 
 impl Slot {
     fn new(info: DeviceInfo, config: &Config) -> Slot {
-        let spec = info.spec;
-        let layout = layout::build(spec, config);
+        let model = info.model();
+        let layout = layout::build(model, config);
         let status = DeviceStatus {
             id: layout.id,
-            name: spec.name,
-            pid: format!("{:04X}", spec.pid),
+            name: info.name(),
+            pid: format!("{:04X}", info.pid()),
             connected: false,
             firmware: None,
             serial: None,
@@ -230,35 +232,22 @@ impl Slot {
             zones: layout.row_zones.clone(),
             game: layout.game,
         };
-        Slot { info, layout, writer: None, retry_at: Instant::now(), status }
+        Slot { info, model, layout, writer: None, retry_at: Instant::now(), status }
     }
 
     fn open(&mut self, api: &HidApi, config: &Config) {
-        let spec = self.info.spec;
-        let result = Device::open(api, self.info.clone()).and_then(|dev| {
-            if spec.kind == DeviceKind::ArgbController {
-                let mut sizes = [0u8; 6];
-                for (s, ch) in sizes.iter_mut().zip(&config.argb_channels) {
-                    *s = ch.leds.min(spec.cols);
-                }
-                dev.set_argb_channel_sizes(sizes)?;
-            }
-            // Software brightness does the dimming; make sure a previous
-            // app did not leave the hardware dimmed.
-            dev.set_brightness(255)?;
-            Ok(dev)
-        });
-        match result {
+        let name = self.info.name();
+        match Device::open(api, self.info.clone(), config) {
             Ok(dev) => {
-                self.status.firmware = dev.firmware().ok();
-                self.status.serial = dev.serial().ok().filter(|s| s.chars().all(|c| c.is_ascii_graphic()) && !s.is_empty());
+                self.status.firmware = dev.firmware();
+                self.status.serial = dev.serial();
                 self.status.error = None;
                 self.status.connected = true;
-                log::info!("opened {} (firmware {:?})", spec.name, self.status.firmware);
+                log::info!("opened {name} (firmware {:?})", self.status.firmware);
                 self.writer = Some(Writer::spawn(dev));
             }
             Err(e) => {
-                log::warn!("could not open {}: {e}", spec.name);
+                log::warn!("could not open {name}: {e}");
                 self.status.connected = false;
                 self.status.error = Some(e.to_string());
                 self.retry_at = Instant::now() + RESCAN_INTERVAL;
@@ -290,11 +279,11 @@ pub fn run(shared: Arc<Shared>) {
         if rev != layout_rev {
             layout_rev = rev;
             for slot in slots.values_mut() {
-                let layout = layout::build(slot.info.spec, &config);
-                // ARGB channel lengths are pushed to the controller on open,
-                // so reopen it only when they change.
+                let layout = layout::build(slot.model, &config);
+                // Some devices take their row lengths on open, so reopen them
+                // only when the lengths change.
                 let lengths = |l: &DeviceLayout| l.rows.iter().map(Vec::len).collect::<Vec<_>>();
-                if slot.info.spec.kind == DeviceKind::ArgbController && lengths(&layout) != lengths(&slot.layout) {
+                if slot.model.sizes_set_on_open() && lengths(&layout) != lengths(&slot.layout) {
                     slot.writer = None;
                 }
                 slot.status.zones = layout.row_zones.clone();
@@ -308,11 +297,11 @@ pub fn run(shared: Arc<Shared>) {
             if let Err(e) = api.refresh_devices() {
                 log::warn!("HID rescan failed: {e}");
             }
-            let found: BTreeMap<String, DeviceInfo> = razer_hid::enumerate(&api).into_iter().map(|i| (i.key(), i)).collect();
+            let found: BTreeMap<String, DeviceInfo> = backend::enumerate(&api).into_iter().map(|i| (i.key(), i)).collect();
             slots.retain(|key, slot| {
                 let keep = found.contains_key(key);
                 if !keep {
-                    log::info!("{} disconnected", slot.info.spec.name);
+                    log::info!("{} disconnected", slot.info.name());
                 }
                 keep
             });
