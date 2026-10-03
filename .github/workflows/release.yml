@@ -1,0 +1,102 @@
+# Build and test every push and pull request. Pushes to main that contain
+# releasable Conventional Commits (feat, fix, perf, breaking) also get a
+# version tag and a GitHub release with the Windows package and installer.
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  # One release at a time; never cancel a run that may be publishing.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags and history for the version bump
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-pc-windows-msvc
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Decide version
+        id: version
+        shell: bash
+        run: |
+          bash scripts/release-version.sh notes.md | tee -a "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" != "push" ]; then echo "release=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Stamp version
+        if: steps.version.outputs.version != ''
+        shell: bash
+        run: sed -i '0,/^version = ".*"/s//version = "${{ steps.version.outputs.version }}"/' Cargo.toml
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint
+        # The DLL's linker prints an informational message that rustc reports
+        # as a warning; it is not a code problem.
+        run: cargo clippy --workspace --all-targets -- -D warnings -A linker-messages
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Build
+        shell: pwsh
+        run: ./scripts/build.ps1
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          if (-not $version) { $version = 'dev' }
+          New-Item -ItemType Directory out | Out-Null
+          Copy-Item scripts/razer-services.ps1 dist/
+          Compress-Archive -Path dist/* -DestinationPath "out/OpenChroma-$version-windows-x64.zip"
+          # The installer learns which repository to download from here.
+          (Get-Content scripts/install.ps1 -Raw).Replace('__REPO__', '${{ github.repository }}') |
+            Set-Content out/install.ps1 -Encoding utf8 -NoNewline
+          Get-ChildItem out | Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } |
+            Set-Content out/SHA256SUMS.txt -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenChroma-windows-x64
+          path: out/*
+
+      - name: Publish release
+        if: steps.version.outputs.release == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          {
+            echo "Install or update from PowerShell:"
+            echo
+            echo '```powershell'
+            echo "irm https://github.com/${{ github.repository }}/releases/latest/download/install.ps1 | iex"
+            echo '```'
+            echo
+            cat notes.md
+          } > release-notes.md
+          gh release create "v$VERSION" out/* \
+            --target "$GITHUB_SHA" \
+            --title "OpenChroma v$VERSION" \
+            --notes-file release-notes.md
