@@ -29,6 +29,8 @@ use crate::sdk::{Client, Session, Sessions};
 const RESCAN_INTERVAL: Duration = Duration::from_secs(2);
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
 const STATUS_INTERVAL: Duration = Duration::from_millis(100);
+/// Identify stops by itself after this long.
+const IDENTIFY_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -41,6 +43,9 @@ pub struct Shared {
     pub sessions: Mutex<Sessions>,
     pub devices: Mutex<Vec<DeviceStatus>>,
     pub apps: Mutex<Apps>,
+    /// Device id or zone key ("argb:4") currently flashing to be found, and
+    /// since when.
+    pub identify: Mutex<Option<(String, Instant)>>,
     pub started: Instant,
 }
 
@@ -52,6 +57,7 @@ impl Shared {
             sessions: Mutex::new(Sessions::default()),
             devices: Mutex::new(Vec::new()),
             apps: Mutex::new(Apps::load()),
+            identify: Mutex::new(None),
             started: Instant::now(),
         })
     }
@@ -352,6 +358,16 @@ fn render(shared: &Shared, config: &Config, slots: &mut BTreeMap<String, Slot>) 
     sessions.expire();
     let active = if config.sdk_enabled { sessions.active() } else { None };
 
+    let identify = {
+        let mut id = lock(&shared.identify);
+        if id.as_ref().is_some_and(|(_, since)| since.elapsed() > IDENTIFY_TIMEOUT) {
+            *id = None;
+        }
+        id.as_ref().map(|(target, _)| target.clone())
+    };
+    // Flash at 2 Hz so the target stands out against any effect.
+    let flash = if (t * 2.0).fract() < 0.5 { Rgb::new(255, 255, 255) } else { Rgb::BLACK };
+
     for slot in slots.values_mut() {
         let Some(writer) = &slot.writer else { continue };
         let layout = &slot.layout;
@@ -362,8 +378,12 @@ fn render(shared: &Shared, config: &Config, slots: &mut BTreeMap<String, Slot>) 
             .zip(&layout.row_zones)
             .map(|(row, zone)| {
                 let effect = zone.as_ref().and_then(|z| profile.overrides.get(z)).unwrap_or(device_effect);
+                let identified = identify.as_deref().is_some_and(|i| i == layout.id || zone.as_deref() == Some(i));
                 row.iter()
                     .map(|led| {
+                        if identified {
+                            return flash;
+                        }
                         let c = active.and_then(|s| sdk_color(s, led)).unwrap_or_else(|| effect.render(t, led.pos));
                         color::scale(c, brightness)
                     })

@@ -144,18 +144,34 @@ pub fn uninstall_dir(dir: &Path) -> io::Result<Vec<String>> {
     Ok(done)
 }
 
-pub fn system_status() -> Vec<String> {
+/// Who provides each system DLL: "openchroma", "razer" or "missing".
+pub fn system_dll_states() -> Vec<(&'static str, &'static str)> {
     system_targets()
         .into_iter()
-        .map(|(_, target)| {
+        .map(|(name, target)| {
             let state = if !target.exists() {
                 "missing"
             } else if is_ours(&target) {
-                "OpenChroma"
+                "openchroma"
             } else {
-                "Razer (original)"
+                "razer"
             };
-            format!("{}: {state}", target.display())
+            (name, state)
+        })
+        .collect()
+}
+
+pub fn system_status() -> Vec<String> {
+    system_targets()
+        .into_iter()
+        .zip(system_dll_states())
+        .map(|((_, target), (_, state))| {
+            let label = match state {
+                "openchroma" => "OpenChroma",
+                "razer" => "Razer (original)",
+                _ => "missing",
+            };
+            format!("{}: {label}", target.display())
         })
         .collect()
 }

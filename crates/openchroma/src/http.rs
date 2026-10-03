@@ -286,6 +286,12 @@ fn handle_ui(mut req: Request, shared: &Shared) {
                 Err(e) => reply(req, 500, json!({"error": e.to_string()})),
             }
         }
+        (Method::Post, "/api/identify") if trusted => {
+            // {"target": "argb:4"} flashes that device or zone; null stops.
+            let b = body(&mut req);
+            *lock(&shared.identify) = b["target"].as_str().map(|t| (t.to_string(), std::time::Instant::now()));
+            reply(req, 200, json!({"ok": true}))
+        }
         (Method::Post, "/api/apps") if trusted => {
             let b = body(&mut req);
             match (b["title"].as_str(), b["allowed"].as_bool()) {
@@ -297,6 +303,21 @@ fn handle_ui(mut req: Request, shared: &Shared) {
         (Method::Put | Method::Post, _) => reply(req, 403, json!({"error": "missing X-OpenChroma header"})),
         _ => reply(req, 404, json!({"error": "not found"})),
     }
+}
+
+/// DLL states change rarely and checking reads the files; status is polled
+/// several times a second, so cache for a few seconds.
+fn sdk_dlls() -> Value {
+    static CACHE: std::sync::Mutex<Option<(std::time::Instant, Value)>> = std::sync::Mutex::new(None);
+    let mut cache = lock(&CACHE);
+    if let Some((at, v)) = cache.as_ref() {
+        if at.elapsed() < std::time::Duration::from_secs(5) {
+            return v.clone();
+        }
+    }
+    let v = json!(crate::install::system_dll_states().into_iter().collect::<std::collections::BTreeMap<_, _>>());
+    *cache = Some((std::time::Instant::now(), v.clone()));
+    v
 }
 
 pub fn status(shared: &Shared) -> Value {
@@ -328,7 +349,9 @@ pub fn status(shared: &Shared) -> Value {
         "sdk_enabled": cfg.sdk_enabled,
         "sdk_port_bound": SDK_PORT_BOUND.load(Ordering::SeqCst),
         "sdk_port": sdk_port(),
+        "sdk_dlls": sdk_dlls(),
         "apps": lock(&shared.apps).list(),
+        "identify": lock(&shared.identify).as_ref().map(|(t, _)| t.clone()),
     })
 }
 
