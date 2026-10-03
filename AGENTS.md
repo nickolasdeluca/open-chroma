@@ -12,6 +12,7 @@ Windows. It is a Cargo workspace:
 | Crate                 | What it is                                                                 |
 |-----------------------|----------------------------------------------------------------------------|
 | `crates/razer-hid`    | USB HID protocol and device table (`devices.rs`). No service logic.        |
+| `crates/asus-aura`    | ASUS Aura motherboard USB HID protocol and device table. No service logic. |
 | `crates/chroma-proto` | Types shared by the service and the DLL: SDK canvases, effects, pipe protocol. |
 | `crates/openchroma`   | The service (`openchromad`), the CLI (`openchroma`), web UI (`assets/index.html`). |
 | `crates/rzchromasdk`  | Drop-in replacement for Razer's `RzChromaSDK64.dll` / `RzChromaSDK.dll`.   |
@@ -43,8 +44,9 @@ DLL target is `i686-pc-windows-msvc`. If you change `rzchromasdk` or
   54235/54240/the SDK pipe. Before running anything that talks to devices
   directly (`openchroma run`, the `bench` example), stop it with
   `openchroma service stop`, and start it again afterwards.
-- `cargo run -p razer-hid --example probe` is read-only and safe to run at any
-  time. `bench` changes the lights.
+- `cargo run -p razer-hid --example probe` and
+  `cargo run -p asus-aura --example probe` are read-only and safe to run at
+  any time. `bench` changes the lights.
 - To test the REST API without taking over port 54235, set
   `OPENCHROMA_SDK_PORT` for a dev instance.
 - The service runs **its own copy** from `C:\Program Files\OpenChroma`.
@@ -59,8 +61,8 @@ DLL target is `i686-pc-windows-msvc`. If you change `rzchromasdk` or
   `STORAGE_NO_SAVE`. Don't add commands that persist to onboard memory,
   change firmware or modes, or touch non-lighting settings (DPI, keymaps).
 - **New devices** come from OpenRGB or OpenRazer data and need a run of
-  `probe` on real hardware before they go into `devices.rs`. Record the source
-  in a comment.
+  `probe` on real hardware before they go into a device table. Record the
+  source in a comment.
 - **DLL ABI is frozen:** exactly Razer's 15 exports with the same C
   signatures. Every export stays wrapped in `guard` (no unwinding or aborting
   into a game) and must never block the caller on I/O.
@@ -109,8 +111,9 @@ History follows [Conventional Commits](https://www.conventionalcommits.org/):
 
 - **Types:** `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`,
   `chore`.
-- **Scopes:** `razer-hid`, `chroma-proto`, `openchroma`, `rzchromasdk`, `app`
-  (the desktop app), `ui` (the web UI), `service`, `scripts`, `ci`, `docs`.
+- **Scopes:** `razer-hid`, `asus-aura`, `chroma-proto`, `openchroma`,
+  `rzchromasdk`, `app` (the desktop app), `ui` (the web UI), `service`,
+  `scripts`, `ci`, `docs`.
   Leave the scope out when a change spans the whole project.
 - **Summary:** imperative mood, lowercase, no trailing period, at most 72
   characters. Example: `fix(rzchromasdk): reconnect when the service
