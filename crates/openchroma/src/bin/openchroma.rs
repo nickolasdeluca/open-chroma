@@ -1,10 +1,7 @@
 //! Command-line front end.
 
-use std::io::{Read, Write};
-use std::net::TcpStream;
 use std::path::Path;
 use std::process::ExitCode;
-use std::time::Duration;
 
 use openchroma::config::UI_PORT;
 use openchroma::install;
@@ -106,22 +103,10 @@ fn devices() -> Result<(), String> {
 
 /// Tiny HTTP/1.0 client for the local control API.
 fn request(method: &str, path: &str, body: Option<&Value>) -> Result<Value, String> {
-    let mut stream = TcpStream::connect(("127.0.0.1", UI_PORT)).map_err(|_| not_running())?;
-    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
-    let body = body.map(Value::to_string).unwrap_or_default();
-    let req = format!(
-        "{method} {path} HTTP/1.0\r\nHost: 127.0.0.1\r\nX-OpenChroma: cli\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
-        body.len()
-    );
-    stream.write_all(req.as_bytes()).map_err(|e| e.to_string())?;
-    let mut resp = String::new();
-    stream.read_to_string(&mut resp).map_err(|e| e.to_string())?;
-    let (head, body) = resp.split_once("\r\n\r\n").ok_or("malformed response")?;
-    let value: Value = serde_json::from_str(body).unwrap_or(Value::Null);
-    if !head.split_whitespace().nth(1).is_some_and(|c| c.starts_with('2')) {
-        return Err(value["error"].as_str().unwrap_or(head.lines().next().unwrap_or("request failed")).to_string());
-    }
-    Ok(value)
+    openchroma::client::request("cli", method, path, body).map_err(|e| match e {
+        openchroma::client::Error::Offline => not_running(),
+        e => e.to_string(),
+    })
 }
 
 fn not_running() -> String {
