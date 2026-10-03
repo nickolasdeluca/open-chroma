@@ -85,6 +85,18 @@ DLL target is `i686-pc-windows-msvc`. If you change `rzchromasdk` or
   dependencies when the standard library or an existing dependency does the
   job.
 
+## Releases
+
+- Releases are made only by CI (`.github/workflows/release.yml`). Never create
+  `v*` tags or GitHub releases by hand.
+- The version comes from the commit types (see the README's "Releases"), so a
+  wrong type means a wrong version. Use `feat` only for user-visible features
+  and `fix` only for bug fixes. Mark breaking changes with `!`.
+- `scripts/install.ps1` is what users run with `irm | iex`. It must keep
+  working in Windows PowerShell 5.1, must never call `exit` outside its
+  elevated relaunch (that would close the user's shell), and must verify
+  checksums before installing.
+
 ## Commits
 
 History follows [Conventional Commits](https://www.conventionalcommits.org/):
@@ -98,8 +110,8 @@ History follows [Conventional Commits](https://www.conventionalcommits.org/):
 - **Types:** `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`,
   `chore`.
 - **Scopes:** `razer-hid`, `chroma-proto`, `openchroma`, `rzchromasdk`, `app`
-  (the desktop app), `ui` (the web UI), `service`, `scripts`, `docs`. Leave the
-  scope out when a change spans the whole project.
+  (the desktop app), `ui` (the web UI), `service`, `scripts`, `ci`, `docs`.
+  Leave the scope out when a change spans the whole project.
 - **Summary:** imperative mood, lowercase, no trailing period, at most 72
   characters. Example: `fix(rzchromasdk): reconnect when the service
   restarts`.

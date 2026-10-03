@@ -20,6 +20,29 @@ REST API.
    keyboard · mouse · mousepad · case · ARGB controller
 ```
 
+## Install
+
+From PowerShell:
+
+```powershell
+irm https://github.com/nickolasdeluca/open-chroma/releases/latest/download/install.ps1 | iex
+```
+
+The same command updates an existing install. The installer asks for
+administrator rights, downloads the latest release and checks its SHA-256. If
+Razer's Chroma SDK services are running, it offers to stop them. It then
+installs the service, the desktop app and the SDK DLLs (see below).
+
+For a specific version, or to uninstall:
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/nickolasdeluca/open-chroma/releases/latest/download/install.ps1))) -Version 0.2.0
+& ([scriptblock]::Create((irm https://github.com/nickolasdeluca/open-chroma/releases/latest/download/install.ps1))) -Uninstall
+```
+
+Your profiles and settings in `%ProgramData%\OpenChroma` are kept on update and
+uninstall.
+
 ## Supported devices
 
 Verified on real hardware:
@@ -37,6 +60,31 @@ commands) come from [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) and
 [OpenRazer](https://github.com/openrazer/openrazer). To add a device, append an
 entry to `crates/razer-hid/src/devices.rs` and a layout in
 `crates/openchroma/src/layout.rs`.
+
+## Releases
+
+`.github/workflows/release.yml` builds, lints and tests every push and pull
+request. When a push to `main` contains releasable commits, it also tags
+`vX.Y.Z` and publishes a GitHub release. The release contains:
+
+- `OpenChroma-X.Y.Z-windows-x64.zip`: the binaries and `razer-services.ps1`
+- `install.ps1`
+- `SHA256SUMS.txt`
+
+The version comes from the Conventional Commits since the last tag
+(`scripts/release-version.sh`):
+
+| Commits since the last release | Next version |
+|---|---|
+| a breaking change (`feat!:` or a `BREAKING CHANGE:` footer) | major; minor while below 1.0 |
+| at least one `feat` | minor |
+| `fix` or `perf` | patch |
+| only `docs`, `chore`, `ci`, `refactor`, `test`, `build` | no release |
+
+The first release uses the version in `Cargo.toml`. To jump to a specific
+version, raise it in `Cargo.toml`; a higher manual version always wins. CI
+stamps the release version into the binaries, and `Cargo.toml` itself isn't
+changed by releases.
 
 ## Building
 
