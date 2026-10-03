@@ -1,0 +1,355 @@
+// Theme and building blocks for the OpenChroma app. Colors follow the
+// approved mockup: graphite ground, one mint accent, LED previews as the
+// most colorful thing on screen.
+
+import "fonts/IBMPlexSans-Regular.ttf";
+import "fonts/IBMPlexSans-Medium.ttf";
+import "fonts/IBMPlexSans-SemiBold.ttf";
+import "fonts/IBMPlexMono-Regular.ttf";
+
+export global Theme {
+    out property <color> bg: #0E1013;
+    out property <color> sidebar: #121418;
+    out property <color> panel: #16191E;
+    out property <color> well: #0B0D10;
+    out property <color> line: #23272E;
+    out property <color> line2: #2C313A;
+    out property <color> line3: #3A404A;
+    out property <color> text: #E8EAED;
+    out property <color> text2: #B4BAC4;
+    out property <color> muted: #9AA1AC;
+    out property <color> accent: #5EE6A8;
+    out property <color> accent-bg: #1D2A25;
+    out property <color> accent-border: #3E8F6B;
+    out property <color> warn: #F2B04A;
+    out property <color> danger: #FF9C85;
+    out property <color> danger-line: #5A2A22;
+    out property <color> game-bg: #2A1714;
+    out property <color> game-fg: #FF8A6B;
+    out property <color> game-chip: #FFB4A2;
+    out property <string> mono: "IBM Plex Mono";
+}
+
+// Stroke icons on a 24×24 grid, drawn like the mockup's inline SVGs.
+export component Icon inherits Path {
+    in property <string> name;
+    in property <color> tint: Theme.text2;
+    width: 18px;
+    height: 18px;
+    viewbox-width: 24;
+    viewbox-height: 24;
+    fill: transparent;
+    stroke: tint;
+    stroke-width: 2px;
+    commands: name == "lighting" ? "M 8 12 A 4 4 0 1 0 16 12 A 4 4 0 1 0 8 12 M 12 2 L 12 5 M 12 19 L 12 22 M 2 12 L 5 12 M 19 12 L 22 12 M 4.9 4.9 L 7 7 M 17 17 L 19.1 19.1 M 4.9 19.1 L 7 17 M 17 7 L 19.1 4.9"
+        : name == "games" ? "M 7 7 L 17 7 A 5 5 0 0 1 17 18 L 7 18 A 5 5 0 0 1 7 7 Z M 7 11 L 7 14 M 5.5 12.5 L 8.5 12.5 M 16 12 L 16.5 12 M 18 14 L 18.5 14"
+        : name == "argb" ? "M 3 12 A 9 9 0 1 0 21 12 A 9 9 0 1 0 3 12 M 10 12 A 2 2 0 1 0 14 12 A 2 2 0 1 0 10 12 M 12 10 C 12 7 13 5 15 4 M 14 12 C 17 12 19 13 20 15 M 12 14 C 12 17 11 19 9 20 M 10 12 C 7 12 5 11 4 9"
+        : name == "check" ? "M 5 12 L 10 17 L 20 7"
+        : "";
+}
+
+export component Card inherits Rectangle {
+    background: Theme.panel;
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: Theme.line;
+}
+
+export component Label inherits Text {
+    color: Theme.muted;
+    font-size: 12px;
+}
+
+export component Heading inherits Text {
+    color: Theme.text;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+export component Button inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary;
+    in property <bool> danger;
+    in property <bool> dashed;
+    in property <length> height-hint: 44px;
+    callback clicked;
+    accessible-role: button;
+    accessible-label: text;
+    accessible-action-default => { clicked(); }
+    min-height: height-hint;
+    border-radius: 10px;
+    border-width: primary ? 0 : 1px;
+    border-color: danger ? Theme.danger-line : dashed ? Theme.line3 : Theme.line2;
+    background: primary ? (touch.has-hover ? #7DEDBB : Theme.accent) : dashed ? transparent : (touch.has-hover ? #1C2026 : Theme.panel);
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        alignment: center;
+        Text {
+            text: root.text;
+            vertical-alignment: center;
+            color: root.primary ? Theme.bg : root.danger ? Theme.danger : root.dashed ? Theme.text2 : Theme.text;
+            font-weight: root.primary ? 600 : 400;
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Text-like action, styled as a link.
+export component LinkButton inherits Rectangle {
+    in property <string> text;
+    callback clicked;
+    accessible-role: button;
+    accessible-label: text;
+    accessible-action-default => { clicked(); }
+    min-height: 32px;
+    HorizontalLayout {
+        Text {
+            text: root.text;
+            vertical-alignment: center;
+            color: touch.has-hover ? #8AF0C2 : Theme.accent;
+            font-weight: 500;
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component Switch inherits Rectangle {
+    in property <bool> checked;
+    callback toggled(bool);
+    accessible-role: switch;
+    accessible-checkable: true;
+    accessible-checked: checked;
+    accessible-action-default => { toggled(!checked); }
+    width: 34px;
+    height: 20px;
+    border-radius: 10px;
+    background: checked ? Theme.accent : Theme.line3;
+    Rectangle {
+        x: root.checked ? 16px : 2px;
+        y: 2px;
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        background: Theme.bg;
+        animate x { duration: 120ms; }
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggled(!root.checked); }
+    }
+}
+
+// A labelled switch in a bordered button, as in the page headers.
+export component SwitchButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> checked;
+    callback toggled(bool);
+    accessible-role: switch;
+    accessible-label: text;
+    accessible-checkable: true;
+    accessible-checked: checked;
+    accessible-action-default => { toggled(!checked); }
+    min-height: 44px;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Theme.line2;
+    background: touch.has-hover ? #1C2026 : Theme.panel;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 10px;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Switch { checked: root.checked; toggled(v) => { root.toggled(v); } }
+        }
+        Text { text: root.text; vertical-alignment: center; color: Theme.text; }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggled(!root.checked); }
+    }
+}
+
+// 0..1 slider; `changed` fires while dragging.
+export component Slider inherits Rectangle {
+    in-out property <float> value;
+    callback changed(float);
+    accessible-role: slider;
+    accessible-value: round(value * 100) + "%";
+    accessible-action-increment => { value = Math.min(1, value + 0.05); changed(value); }
+    accessible-action-decrement => { value = Math.max(0, value - 0.05); changed(value); }
+    min-width: 120px;
+    height: 28px;
+    Rectangle {
+        y: (parent.height - 4px) / 2;
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.line3;
+    }
+    Rectangle {
+        x: 0;
+        y: (parent.height - 4px) / 2;
+        width: root.value * root.width;
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.accent;
+    }
+    Rectangle {
+        x: root.value * (root.width - 16px);
+        y: (parent.height - 16px) / 2;
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        background: Theme.text;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.value = Math.clamp(self.mouse-x / root.width, 0, 1);
+                root.changed(root.value);
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.value = Math.clamp(self.mouse-x / root.width, 0, 1);
+                root.changed(root.value);
+            }
+        }
+    }
+}
+
+// Bordered single-line text input.
+export component TextField inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    in property <length> font-size: 14px;
+    in property <int> font-weight: 400;
+    callback edited(string);
+    callback accepted(string);
+    min-height: 40px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent-border : Theme.line2;
+    background: Theme.bg;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        input := TextInput {
+            vertical-alignment: center;
+            color: Theme.text;
+            font-size: root.font-size;
+            font-weight: root.font-weight;
+            single-line: true;
+            edited => { root.edited(self.text); }
+            accepted => { root.accepted(self.text); }
+        }
+    }
+}
+
+// [−] value [+] number stepper.
+export component Stepper inherits Rectangle {
+    in property <int> value;
+    in property <int> minimum: 0;
+    in property <int> maximum: 80;
+    in property <string> label;
+    callback changed(int);
+    accessible-role: spinbox;
+    accessible-label: label;
+    accessible-value: value;
+    accessible-action-increment => { if (value < maximum) { changed(value + 1); } }
+    accessible-action-decrement => { if (value > minimum) { changed(value - 1); } }
+    height: 36px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: Theme.line2;
+    background: Theme.bg;
+    HorizontalLayout {
+        Rectangle {
+            width: 30px;
+            Text { text: "−"; color: root.value > root.minimum ? Theme.text : Theme.line3; font-size: 16px; }
+            TouchArea { mouse-cursor: pointer; clicked => { if (root.value > root.minimum) { root.changed(root.value - 1); } } }
+        }
+        Text {
+            text: root.value;
+            min-width: 26px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            color: Theme.text;
+            font-family: Theme.mono;
+        }
+        Rectangle {
+            width: 30px;
+            Text { text: "+"; color: root.value < root.maximum ? Theme.text : Theme.line3; font-size: 16px; }
+            TouchArea { mouse-cursor: pointer; clicked => { if (root.value < root.maximum) { root.changed(root.value + 1); } } }
+        }
+    }
+}
+
+// Two-option toggle group.
+export component Segmented inherits Rectangle {
+    in property <string> first;
+    in property <string> second;
+    in property <bool> second-selected;
+    callback picked(bool);
+    height: 38px;
+    border-radius: 9px;
+    border-width: 1px;
+    border-color: Theme.line2;
+    clip: true;
+    HorizontalLayout {
+        Rectangle {
+            background: root.second-selected ? transparent : Theme.accent-bg;
+            accessible-role: button;
+            accessible-label: root.first;
+            accessible-checked: !root.second-selected;
+            accessible-action-default => { root.picked(false); }
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                Text { text: root.first; vertical-alignment: center; color: root.second-selected ? Theme.text2 : Theme.text; }
+            }
+            TouchArea { mouse-cursor: pointer; clicked => { root.picked(false); } }
+        }
+        Rectangle {
+            background: root.second-selected ? Theme.accent-bg : transparent;
+            accessible-role: button;
+            accessible-label: root.second;
+            accessible-checked: root.second-selected;
+            accessible-action-default => { root.picked(true); }
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                Text { text: root.second; vertical-alignment: center; color: root.second-selected ? Theme.text : Theme.text2; }
+            }
+            TouchArea { mouse-cursor: pointer; clicked => { root.picked(true); } }
+        }
+    }
+}
+
+// Eight (or any number of) LEDs on a ring, as a fan.
+export component FanRing inherits Rectangle {
+    in property <[color]> leds;
+    in property <length> size: 46px;
+    in property <length> dot: 7px;
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    border-width: 1px;
+    border-color: #262A31;
+    for c[i] in leds: Rectangle {
+        width: root.dot;
+        height: root.dot;
+        border-radius: root.dot / 2;
+        background: c;
+        x: (root.size - root.dot) / 2 + (root.size - root.dot) / 2 * 0.86 * Math.cos(i * 360deg / Math.max(1, root.leds.length));
+        y: (root.size - root.dot) / 2 + (root.size - root.dot) / 2 * 0.86 * Math.sin(i * 360deg / Math.max(1, root.leds.length));
+    }
+}

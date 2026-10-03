@@ -1,4 +1,4 @@
-use razer_hid::Rgb;
+pub use razer_hid::Rgb;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 /// Colors in config files and the control API are "#RRGGBB" strings.

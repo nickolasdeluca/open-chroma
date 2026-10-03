@@ -1,0 +1,1217 @@
+// The OpenChroma desktop app. Four pages behind a sidebar: Lighting (home),
+// Profile editor, ARGB channels and Games. All data comes from the Rust side,
+// which mirrors the service's control API.
+
+import { ScrollView, ComboBox } from "std-widgets.slint";
+import { Theme, Icon, Card, Label, Heading, Button, LinkButton, Switch, SwitchButton, Slider, TextField, Stepper, Segmented, FanRing } from "widgets.slint";
+
+export struct ColorRow {
+    c: [color],
+}
+
+export struct ProfileItem {
+    name: string,
+    effect: string,
+    swatch: [color],
+    active: bool,
+}
+
+export struct ChannelPreview {
+    name: string,
+    is-fans: bool,
+    fans: [ColorRow],
+    strip: [color],
+}
+
+export struct EffectOption {
+    index: int,
+    label: string,
+    swatch: [color],
+}
+
+export struct EffectRow {
+    items: [EffectOption],
+}
+
+export struct ZoneItem {
+    key: string,
+    name: string,
+    device: string,
+    choice: int,
+    overridden: bool,
+}
+
+export struct PortEdit {
+    index: int,
+    name: string,
+    is-fans: bool,
+    fans: int,
+    fan-leds: int,
+    leds: int,
+    link: int,
+    used: bool,
+    flashing: bool,
+    preview: [ColorRow],
+}
+
+export struct PortRow {
+    ports: [PortEdit],
+}
+
+export struct MappingRow {
+    id: string,
+    name: string,
+    detail: string,
+    choice: int,
+}
+
+export struct CheckRow {
+    label: string,
+    detail: string,
+    ok: bool,
+}
+
+export struct AppRow {
+    title: string,
+    detail: string,
+    allowed: bool,
+}
+
+component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <string> icon;
+    in property <bool> active;
+    callback clicked;
+    accessible-role: button;
+    accessible-label: label;
+    accessible-action-default => { clicked(); }
+    min-height: 44px;
+    border-radius: 10px;
+    background: active ? Theme.accent-bg : touch.has-hover ? #181B20 : transparent;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Icon { name: root.icon; tint: root.active ? Theme.accent : Theme.text2; }
+        }
+        Text {
+            text: root.label;
+            vertical-alignment: center;
+            color: root.active ? Theme.text : Theme.text2;
+            font-weight: root.active ? 500 : 400;
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// A gradient drawn as slices of pre-interpolated colors.
+component Swatch inherits Rectangle {
+    in property <[color]> colors;
+    border-radius: 6px;
+    clip: true;
+    HorizontalLayout {
+        for c in root.colors: Rectangle { background: c; horizontal-stretch: 1; }
+    }
+}
+
+component Dot inherits Rectangle {
+    in property <color> c;
+    in property <length> size: 13px;
+    width: size;
+    height: size;
+    border-radius: 3px;
+    background: c;
+}
+
+component PageHeader inherits VerticalLayout {
+    in property <string> eyebrow;
+    in property <string> title;
+    spacing: 4px;
+    Text {
+        text: root.eyebrow;
+        color: Theme.muted;
+        font-size: 12px;
+        letter-spacing: 1px;
+    }
+    Text {
+        text: root.title;
+        color: Theme.text;
+        font-size: 28px;
+        font-weight: 600;
+    }
+}
+
+// A column of fans or a vertical strip for one ARGB channel.
+component ChannelColumn inherits VerticalLayout {
+    in property <ChannelPreview> channel;
+    spacing: 8px;
+    alignment: center;
+    if channel.is-fans: VerticalLayout {
+        spacing: 8px;
+        for fan in root.channel.fans: FanRing { leds: fan.c; }
+    }
+    if !channel.is-fans: VerticalLayout {
+        spacing: 3px;
+        for c in root.channel.strip: Rectangle { width: 6px; height: 6px; border-radius: 2px; background: c; }
+    }
+}
+
+// The case: ARGB channels around the O11's LED strips.
+component CasePreview inherits VerticalLayout {
+    in property <[ChannelPreview]> channels-left;
+    in property <[ChannelPreview]> channels-right;
+    in property <[ColorRow]> strips;
+    in property <string> caption;
+    spacing: 10px;
+    alignment: end;
+    Rectangle {
+        border-radius: 14px;
+        background: Theme.well;
+        border-width: 1px;
+        border-color: Theme.line;
+        HorizontalLayout {
+            padding: 18px;
+            spacing: 20px;
+            for ch in root.channels-left: ChannelColumn { channel: ch; }
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: center;
+                for strip in root.strips: VerticalLayout {
+                    spacing: 3px;
+                    alignment: center;
+                    for c in strip.c: Rectangle { width: 6px; height: 6px; border-radius: 2px; background: c; }
+                }
+            }
+            for ch in root.channels-right: ChannelColumn { channel: ch; }
+        }
+    }
+    Label { text: root.caption; }
+}
+
+// The desk mat (its border is the Goliathus' edge LED) with the keyboard and
+// mouse sitting on it, as on the real desk.
+component DeskPreview inherits VerticalLayout {
+    in property <bool> has-keyboard;
+    in property <bool> has-mouse;
+    in property <bool> has-pad;
+    in property <[ColorRow]> keyboard;
+    in property <length> dot: 12px;
+    in property <color> pad;
+    in property <color> glow;
+    in property <color> wheel;
+    in property <color> logo;
+    spacing: 10px;
+    HorizontalLayout {
+        alignment: start;
+        Rectangle {
+            border-radius: 16px;
+            background: Theme.well;
+            border-width: 3px;
+            border-color: root.has-pad ? root.pad : Theme.line;
+            HorizontalLayout {
+                padding: 18px;
+                spacing: 20px;
+                if root.has-keyboard: VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        border-radius: 10px;
+                        background: #14171B;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                        VerticalLayout {
+                            padding: 12px;
+                            spacing: 3px;
+                            for row in root.keyboard: HorizontalLayout {
+                                spacing: 3px;
+                                alignment: start;
+                                for c in row.c: Dot { c: c; size: root.dot; }
+                            }
+                        }
+                    }
+                }
+                if root.has-mouse: VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 52px;
+                        height: 78px;
+                        border-radius: 26px;
+                        background: #1A1D22;
+                        border-width: 2px;
+                        border-color: root.glow;
+                        Rectangle { x: 21px; y: 10px; width: 6px; height: 14px; border-radius: 3px; background: root.wheel; }
+                        Rectangle { x: 18px; y: 46px; width: 12px; height: 12px; border-radius: 6px; background: root.logo; }
+                    }
+                }
+                // A mat alone still needs some size to show its glow.
+                if !root.has-keyboard && !root.has-mouse: Rectangle { width: 200px; height: 56px; }
+            }
+        }
+    }
+    Label {
+        text: (root.has-pad ? "Goliathus Chroma Extended" : "")
+            + (root.has-pad && root.has-keyboard ? " · " : "") + (root.has-keyboard ? "BlackWidow Chroma V2" : "")
+            + ((root.has-pad || root.has-keyboard) && root.has-mouse ? " · " : "") + (root.has-mouse ? "Basilisk V3" : "");
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "OpenChroma";
+    icon: @image-url("icon.png");
+    preferred-width: 1280px;
+    preferred-height: 820px;
+    min-width: 1040px;
+    min-height: 640px;
+    background: Theme.bg;
+    default-font-family: "IBM Plex Sans";
+    default-font-size: 14px;
+
+    // Navigation: 0 Lighting, 1 Profile editor, 2 ARGB channels, 3 Games.
+    in-out property <int> page: 0;
+
+    // Service
+    in property <bool> online: true;
+    in property <string> offline-detail;
+    in property <bool> starting;
+    in property <int> devices-connected;
+    in property <int> devices-total;
+    in property <string> toast;
+    callback start-service();
+
+    // Lighting
+    in property <string> active-profile;
+    in property <float> brightness;
+    in property <bool> games-allowed;
+    in property <string> game-title;
+    in property <string> game-detail;
+    in property <string> game-banner;
+    in property <[string]> game-devices;
+    in property <[ProfileItem]> profiles;
+    in property <bool> has-case;
+    in property <bool> has-keyboard;
+    in property <bool> has-mouse;
+    in property <bool> has-pad;
+    in property <[ChannelPreview]> channels-left;
+    in property <[ChannelPreview]> channels-right;
+    in property <[ColorRow]> case-strips;
+    in property <[ColorRow]> keyboard;
+    in property <color> mouse-glow;
+    in property <color> mouse-wheel;
+    in property <color> mouse-logo;
+    in property <color> pad;
+    in property <string> case-caption;
+    callback activate-profile(string);
+    callback edit-profile(string);
+    callback new-profile();
+    callback set-brightness(float);
+    callback set-games-allowed(bool);
+
+    // Profile editor
+    in property <string> editor-name;
+    in property <int> editor-effect;
+    in property <[EffectRow]> effect-rows;
+    in property <[color]> editor-colors;
+    in property <float> editor-speed;
+    in property <string> editor-speed-label;
+    in property <bool> editor-reverse;
+    in property <bool> show-colors;
+    in property <bool> show-speed;
+    in property <bool> show-direction;
+    in property <bool> show-background;
+    in property <color> editor-background;
+    in property <[color]> preview-strip;
+    in property <[ZoneItem]> zones;
+    in property <[string]> zone-options;
+    in property <[color]> color-presets;
+    callback rename-profile(string);
+    callback duplicate-profile();
+    callback delete-profile();
+    callback set-effect(int);
+    callback set-color(int, color);
+    callback add-color();
+    callback remove-color(int);
+    callback set-background(color);
+    callback set-speed(float);
+    callback set-reverse(bool);
+    callback set-zone(string, int);
+
+    // ARGB channels
+    in property <[PortRow]> port-rows;
+    in property <bool> ports-dirty;
+    in property <[string]> link-options;
+    callback port-changed(int, string, bool, int, int, int, int);
+    callback save-ports();
+    callback discard-ports();
+    callback identify(int);
+
+    // Games
+    in property <[MappingRow]> mapping;
+    in property <[string]> mapping-options;
+    in property <[CheckRow]> checks;
+    in property <[AppRow]> apps;
+    callback set-mapping(string, int);
+    callback set-app-allowed(string, bool);
+
+    // Which color swatch the picker edits; -1 = background.
+    property <int> picking: -2;
+
+    HorizontalLayout {
+        // ---------------------------------------------------------------- sidebar
+        Rectangle {
+            width: 232px;
+            background: Theme.sidebar;
+            Rectangle {
+                x: parent.width - 1px;
+                width: 1px;
+                background: Theme.line;
+            }
+            VerticalLayout {
+                padding: 24px;
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 28px;
+                HorizontalLayout {
+                    padding-left: 8px;
+                    spacing: 10px;
+                    alignment: start;
+                    Rectangle {
+                        width: 28px;
+                        height: 28px;
+                        border-radius: 8px;
+                        background: @linear-gradient(135deg, #ff4d4d 0%, #ffd34d 25%, #5EE6A8 50%, #4dc3ff 75%, #9b6bff 100%);
+                    }
+                    Text { text: "OpenChroma"; vertical-alignment: center; color: Theme.text; font-size: 16px; font-weight: 600; }
+                }
+                VerticalLayout {
+                    spacing: 4px;
+                    NavItem { label: "Lighting"; icon: "lighting"; active: root.page <= 1; clicked => { root.page = 0; } }
+                    NavItem { label: "Games"; icon: "games"; active: root.page == 3; clicked => { root.page = 3; } }
+                    NavItem { label: "ARGB channels"; icon: "argb"; active: root.page == 2; clicked => { root.page = 2; } }
+                }
+                Rectangle { vertical-stretch: 1; }
+                Rectangle {
+                    border-radius: 12px;
+                    background: Theme.panel;
+                    border-width: 1px;
+                    border-color: Theme.line;
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 6px;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle { width: 8px; height: 8px; border-radius: 4px; background: root.online ? Theme.accent : Theme.warn; }
+                            }
+                            Text { text: root.online ? "Service running" : "Service not running"; color: Theme.text; font-weight: 500; }
+                        }
+                        Label { text: root.online ? root.devices-connected + " of " + root.devices-total + " devices connected" : "Lights are not being managed"; }
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------- content
+        Rectangle {
+            horizontal-stretch: 1;
+
+            // Offline: the only thing to do is start the service.
+            if !root.online: VerticalLayout {
+                alignment: center;
+                HorizontalLayout {
+                    alignment: center;
+                    Card {
+                        width: 460px;
+                        VerticalLayout {
+                            padding: 28px;
+                            spacing: 14px;
+                            Heading { text: "The OpenChroma service isn't running"; font-size: 18px; }
+                            Text { text: "Your lights and games need the background service. Start it to manage lighting."; color: Theme.muted; wrap: word-wrap; }
+                            if root.offline-detail != "": Text { text: root.offline-detail; color: Theme.warn; wrap: word-wrap; font-size: 12px; }
+                            HorizontalLayout {
+                                alignment: start;
+                                Button {
+                                    text: root.starting ? "Starting…" : "Start service";
+                                    primary: true;
+                                    clicked => { if (!root.starting) { root.start-service(); } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if root.online: ScrollView {
+                VerticalLayout {
+                    padding: 28px;
+                    padding-left: 32px;
+                    padding-right: 32px;
+                    padding-bottom: 40px;
+                    spacing: 22px;
+                    alignment: start;
+
+                    // ======================================================= Lighting
+                    if root.page == 0: VerticalLayout {
+                        spacing: 24px;
+                        HorizontalLayout {
+                            spacing: 16px;
+                            PageHeader { eyebrow: "ACTIVE PROFILE"; title: root.active-profile; }
+                            Rectangle { horizontal-stretch: 1; }
+                            VerticalLayout {
+                                alignment: end;
+                                HorizontalLayout {
+                                    spacing: 20px;
+                                    alignment: end;
+                                    HorizontalLayout {
+                                        spacing: 12px;
+                                        alignment: end;
+                                        Text { text: "Brightness"; vertical-alignment: center; color: Theme.text2; }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Slider {
+                                                width: 160px;
+                                                value: root.brightness;
+                                                changed(v) => { root.set-brightness(v); }
+                                            }
+                                        }
+                                        Text { text: round(root.brightness * 100) + "%"; width: 40px; vertical-alignment: center; color: Theme.text; font-family: Theme.mono; }
+                                    }
+                                    SwitchButton {
+                                        text: "Games can take over";
+                                        checked: root.games-allowed;
+                                        toggled(v) => { root.set-games-allowed(v); }
+                                    }
+                                }
+                            }
+                        }
+
+                        if root.game-title != "": Rectangle {
+                            border-radius: 12px;
+                            background: Theme.game-bg;
+                            border-width: 1px;
+                            border-color: Theme.danger-line;
+                            HorizontalLayout {
+                                padding: 14px;
+                                padding-left: 18px;
+                                padding-right: 18px;
+                                spacing: 12px;
+                                VerticalLayout { alignment: center; Icon { name: "games"; tint: Theme.game-fg; } }
+                                Text { text: root.game-banner; vertical-alignment: center; color: Theme.text; wrap: word-wrap; horizontal-stretch: 1; }
+                                LinkButton { text: "Manage"; clicked => { root.page = 3; } }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 24px;
+                            alignment: stretch;
+
+                            // Live preview of the setup
+                            Card {
+                                horizontal-stretch: 1;
+                                VerticalLayout {
+                                    padding: 24px;
+                                    spacing: 22px;
+                                    alignment: start;
+                                    HorizontalLayout {
+                                        Heading { text: "Your setup"; }
+                                        Rectangle { horizontal-stretch: 1; }
+                                        Label { text: "Live preview"; vertical-alignment: center; }
+                                    }
+                                    if root.width >= 1440px: HorizontalLayout {
+                                        spacing: 28px;
+                                        alignment: start;
+                                        if root.has-case: CasePreview {
+                                            channels-left: root.channels-left;
+                                            channels-right: root.channels-right;
+                                            strips: root.case-strips;
+                                            caption: root.case-caption;
+                                        }
+                                        if root.has-keyboard || root.has-mouse || root.has-pad: DeskPreview {
+                                            has-keyboard: root.has-keyboard;
+                                            has-mouse: root.has-mouse;
+                                            has-pad: root.has-pad;
+                                            keyboard: root.keyboard;
+                                            pad: root.pad;
+                                            glow: root.mouse-glow;
+                                            wheel: root.mouse-wheel;
+                                            logo: root.mouse-logo;
+                                        }
+                                    }
+                                    // Narrow windows stack the devices.
+                                    if root.width < 1440px: VerticalLayout {
+                                        spacing: 18px;
+                                        alignment: start;
+                                        if root.has-case: HorizontalLayout {
+                                            alignment: start;
+                                            CasePreview {
+                                                channels-left: root.channels-left;
+                                                channels-right: root.channels-right;
+                                                strips: root.case-strips;
+                                                caption: root.case-caption;
+                                            }
+                                        }
+                                        if root.has-keyboard || root.has-mouse || root.has-pad: DeskPreview {
+                                            has-keyboard: root.has-keyboard;
+                                            has-mouse: root.has-mouse;
+                                            has-pad: root.has-pad;
+                                            keyboard: root.keyboard;
+                                            // Smaller keys keep the narrowest window usable.
+                                            dot: root.width < 1180px ? 10px : 12px;
+                                            pad: root.pad;
+                                            glow: root.mouse-glow;
+                                            wheel: root.mouse-wheel;
+                                            logo: root.mouse-logo;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Profiles
+                            VerticalLayout {
+                                width: root.width < 1180px ? 240px : 280px;
+                                spacing: 12px;
+                                alignment: start;
+                                HorizontalLayout {
+                                    Heading { text: "Profiles"; vertical-alignment: center; }
+                                    Rectangle { horizontal-stretch: 1; }
+                                    LinkButton { text: "Edit " + root.active-profile; clicked => { root.edit-profile(root.active-profile); root.page = 1; } }
+                                }
+                                for p in root.profiles: Rectangle {
+                                    min-height: 56px;
+                                    border-radius: 12px;
+                                    background: p.active ? Theme.accent-bg : touch.has-hover ? #1A1D22 : Theme.panel;
+                                    border-width: 1px;
+                                    border-color: p.active ? Theme.accent-border : Theme.line;
+                                    accessible-role: button;
+                                    accessible-label: p.name;
+                                    accessible-checked: p.active;
+                                    accessible-action-default => { root.activate-profile(p.name); }
+                                    HorizontalLayout {
+                                        padding-left: 14px;
+                                        padding-right: 14px;
+                                        spacing: 14px;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Swatch { width: 56px; height: 24px; colors: p.swatch; }
+                                        }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Text { text: p.name; color: Theme.text; font-weight: 500; }
+                                            Label { text: p.effect; }
+                                        }
+                                        Rectangle { horizontal-stretch: 1; }
+                                        if p.active: Text { text: "Active"; vertical-alignment: center; color: Theme.accent; font-size: 12px; font-weight: 500; }
+                                    }
+                                    touch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.activate-profile(p.name); }
+                                        double-clicked => { root.edit-profile(p.name); root.page = 1; }
+                                    }
+                                }
+                                Button {
+                                    text: "+ New profile";
+                                    dashed: true;
+                                    clicked => { root.new-profile(); root.page = 1; }
+                                }
+                            }
+                        }
+                    }
+
+                    // ======================================================= Profile editor
+                    if root.page == 1: VerticalLayout {
+                        spacing: 22px;
+                        HorizontalLayout {
+                            spacing: 16px;
+                            VerticalLayout {
+                                spacing: 6px;
+                                HorizontalLayout { alignment: start; LinkButton { text: "← All profiles"; clicked => { root.page = 0; } } }
+                                Label { text: "PROFILE NAME"; letter-spacing: 1px; }
+                                TextField {
+                                    width: 320px;
+                                    min-height: 44px;
+                                    text: root.editor-name;
+                                    font-size: 22px;
+                                    font-weight: 600;
+                                    edited(t) => { root.rename-profile(t); }
+                                }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                            VerticalLayout {
+                                alignment: end;
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    Button { text: "Duplicate"; clicked => { root.duplicate-profile(); } }
+                                    Button { text: "Delete"; danger: true; clicked => { root.delete-profile(); root.page = 0; } }
+                                    Button { text: "Done"; primary: true; clicked => { root.page = 0; } }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            border-radius: 14px;
+                            background: Theme.well;
+                            border-width: 1px;
+                            border-color: Theme.line;
+                            VerticalLayout {
+                                padding: 16px;
+                                padding-left: 18px;
+                                padding-right: 18px;
+                                spacing: 10px;
+                                HorizontalLayout {
+                                    Label { text: "Preview across your setup"; }
+                                    Rectangle { horizontal-stretch: 1; }
+                                    Label { text: "Changes apply to the lights as you edit"; }
+                                }
+                                HorizontalLayout {
+                                    spacing: 3px;
+                                    for c in root.preview-strip: Rectangle { height: 22px; horizontal-stretch: 1; border-radius: 3px; background: c; }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 22px;
+                            alignment: stretch;
+
+                            VerticalLayout {
+                                horizontal-stretch: 3;
+                                spacing: 12px;
+                                alignment: start;
+                                Heading { text: "Effect"; }
+                                for row in root.effect-rows: HorizontalLayout {
+                                    spacing: 10px;
+                                    for e in row.items: Rectangle {
+                                        horizontal-stretch: 1;
+                                        preferred-width: 100px;
+                                        min-width: 0;
+                                        min-height: 76px;
+                                        border-radius: 12px;
+                                        background: e.index == root.editor-effect ? Theme.accent-bg : etouch.has-hover ? #1A1D22 : Theme.panel;
+                                        border-width: 1px;
+                                        border-color: e.index == root.editor-effect ? Theme.accent-border : Theme.line;
+                                        accessible-role: button;
+                                        accessible-label: e.label;
+                                        accessible-checked: e.index == root.editor-effect;
+                                        accessible-action-default => { root.set-effect(e.index); }
+                                        VerticalLayout {
+                                            padding: 10px;
+                                            spacing: 8px;
+                                            Swatch { height: 22px; colors: e.swatch; }
+                                            Text { text: e.label; color: Theme.text; font-size: 13px; font-weight: 500; }
+                                        }
+                                        etouch := TouchArea { mouse-cursor: pointer; clicked => { root.set-effect(e.index); } }
+                                    }
+                                }
+
+                                Card {
+                                    VerticalLayout {
+                                        padding: 18px;
+                                        spacing: 18px;
+                                        if root.show-colors: VerticalLayout {
+                                            spacing: 8px;
+                                            Text { text: "Colors"; color: Theme.text2; }
+                                            HorizontalLayout {
+                                                spacing: 8px;
+                                                alignment: start;
+                                                for c[i] in root.editor-colors: Rectangle {
+                                                    width: 44px;
+                                                    height: 44px;
+                                                    border-radius: 10px;
+                                                    border-width: 2px;
+                                                    border-color: root.picking == i ? Theme.text : Theme.line2;
+                                                    background: c;
+                                                    accessible-role: button;
+                                                    accessible-label: "Edit color " + (i + 1);
+                                                    accessible-action-default => { root.picking = root.picking == i ? -2 : i; }
+                                                    TouchArea {
+                                                        mouse-cursor: pointer;
+                                                        clicked => { root.picking = root.picking == i ? -2 : i; }
+                                                    }
+                                                }
+                                                Rectangle {
+                                                    width: 44px;
+                                                    height: 44px;
+                                                    border-radius: 10px;
+                                                    border-width: 1px;
+                                                    border-color: Theme.line3;
+                                                    accessible-role: button;
+                                                    accessible-label: "Add color";
+                                                    accessible-action-default => { root.add-color(); }
+                                                    Text { text: "+"; color: Theme.text2; font-size: 20px; }
+                                                    TouchArea { mouse-cursor: pointer; clicked => { root.add-color(); } }
+                                                }
+                                            }
+                                        }
+                                        if root.show-background: VerticalLayout {
+                                            spacing: 8px;
+                                            Text { text: "Background"; color: Theme.text2; }
+                                            HorizontalLayout {
+                                                alignment: start;
+                                                Rectangle {
+                                                    width: 44px;
+                                                    height: 44px;
+                                                    border-radius: 10px;
+                                                    border-width: 2px;
+                                                    border-color: root.picking == -1 ? Theme.text : Theme.line2;
+                                                    background: root.editor-background;
+                                                    accessible-role: button;
+                                                    accessible-label: "Edit background color";
+                                                    accessible-action-default => { root.picking = root.picking == -1 ? -2 : -1; }
+                                                    TouchArea { mouse-cursor: pointer; clicked => { root.picking = root.picking == -1 ? -2 : -1; } }
+                                                }
+                                            }
+                                        }
+                                        // Inline color palette for the selected swatch.
+                                        if root.picking > -2 && (root.show-colors || root.show-background): VerticalLayout {
+                                            spacing: 8px;
+                                            HorizontalLayout {
+                                                Label { text: root.picking == -1 ? "Pick the background color" : "Pick color " + (root.picking + 1); }
+                                                Rectangle { horizontal-stretch: 1; }
+                                                if root.picking >= 0 && root.editor-colors.length > 1: LinkButton {
+                                                    text: "Remove";
+                                                    clicked => { root.remove-color(root.picking); root.picking = -2; }
+                                                }
+                                            }
+                                            HorizontalLayout {
+                                                spacing: 6px;
+                                                alignment: start;
+                                                for p[pi] in root.color-presets: Rectangle {
+                                                    accessible-role: button;
+                                                    accessible-label: "Preset color " + (pi + 1);
+                                                    accessible-action-default => {
+                                                        if (root.picking == -1) { root.set-background(p); } else { root.set-color(root.picking, p); }
+                                                    }
+                                                    width: 28px;
+                                                    height: 28px;
+                                                    border-radius: 7px;
+                                                    border-width: 1px;
+                                                    border-color: Theme.line2;
+                                                    background: p;
+                                                    TouchArea {
+                                                        mouse-cursor: pointer;
+                                                        clicked => {
+                                                            if (root.picking == -1) { root.set-background(p); } else { root.set-color(root.picking, p); }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if root.show-speed: VerticalLayout {
+                                            spacing: 8px;
+                                            HorizontalLayout {
+                                                Text { text: "Speed"; color: Theme.text2; }
+                                                Rectangle { horizontal-stretch: 1; }
+                                                Text { text: root.editor-speed-label; color: Theme.text; font-family: Theme.mono; }
+                                            }
+                                            Slider { value: root.editor-speed; changed(v) => { root.set-speed(v); } }
+                                            HorizontalLayout {
+                                                Label { text: "Slow"; }
+                                                Rectangle { horizontal-stretch: 1; }
+                                                Label { text: "Fast"; }
+                                            }
+                                        }
+                                        if root.show-direction: VerticalLayout {
+                                            spacing: 8px;
+                                            Text { text: "Direction"; color: Theme.text2; }
+                                            HorizontalLayout {
+                                                alignment: start;
+                                                Segmented {
+                                                    first: "Left → right";
+                                                    second: "Right → left";
+                                                    second-selected: root.editor-reverse;
+                                                    picked(v) => { root.set-reverse(v); }
+                                                }
+                                            }
+                                        }
+                                        if !root.show-colors && !root.show-speed && !root.show-background: Text {
+                                            text: "This effect has no settings.";
+                                            color: Theme.muted;
+                                        }
+                                    }
+                                }
+                            }
+
+                            VerticalLayout {
+                                horizontal-stretch: 2;
+                                min-width: 320px;
+                                spacing: 12px;
+                                alignment: start;
+                                Heading { text: "Where it applies"; }
+                                Text { text: "Give a device or zone its own effect inside this profile."; color: Theme.muted; font-size: 13px; wrap: word-wrap; }
+                                Card {
+                                    VerticalLayout {
+                                        for z[i] in root.zones: Rectangle {
+                                            min-height: 56px;
+                                            Rectangle { y: 0; height: i == 0 ? 0 : 1px; background: #1F2329; }
+                                            HorizontalLayout {
+                                                padding-left: 14px;
+                                                padding-right: 14px;
+                                                spacing: 12px;
+                                                VerticalLayout {
+                                                    alignment: center;
+                                                    horizontal-stretch: 1;
+                                                    Text { text: z.name; color: Theme.text; font-weight: 500; overflow: elide; }
+                                                    Label { text: z.device; overflow: elide; }
+                                                }
+                                                VerticalLayout {
+                                                    alignment: center;
+                                                    ComboBox {
+                                                        width: 170px;
+                                                        model: root.zone-options;
+                                                        current-index: z.choice;
+                                                        selected(v) => { root.set-zone(z.key, self.current-index); }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ======================================================= ARGB channels
+                    if root.page == 2: VerticalLayout {
+                        spacing: 22px;
+                        HorizontalLayout {
+                            spacing: 16px;
+                            VerticalLayout {
+                                spacing: 6px;
+                                PageHeader { eyebrow: "CHROMA ADDRESSABLE RGB CONTROLLER"; title: "ARGB channels"; }
+                                Text {
+                                    text: "The controller can't report what's plugged in, so tell OpenChroma how many LEDs each port drives. Use Identify to flash a port white and find it in your case.";
+                                    color: Theme.muted;
+                                    wrap: word-wrap;
+                                    max-width: 620px;
+                                }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                            VerticalLayout {
+                                alignment: end;
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    Button { text: "Discard"; clicked => { root.discard-ports(); } }
+                                    Button { text: root.ports-dirty ? "Save channels" : "Saved"; primary: root.ports-dirty; clicked => { root.save-ports(); } }
+                                }
+                            }
+                        }
+                        for row in root.port-rows: HorizontalLayout {
+                            spacing: 16px;
+                            for p in row.ports: Rectangle {
+                                horizontal-stretch: 1;
+                                preferred-width: 300px;
+                                min-width: 0;
+                                border-radius: 14px;
+                                background: p.used ? Theme.panel : Theme.sidebar;
+                                border-width: 1px;
+                                border-color: p.flashing ? Theme.text : p.used ? Theme.line2 : #1F2329;
+                                VerticalLayout {
+                                    padding: 18px;
+                                    spacing: 14px;
+                                    alignment: start;
+                                    HorizontalLayout {
+                                        Text { text: "PORT " + (p.index + 1); color: Theme.muted; font-family: Theme.mono; font-size: 12px; }
+                                        Rectangle { horizontal-stretch: 1; }
+                                        Text {
+                                            text: !p.used ? "Empty" : p.is-fans ? p.leds + " LEDs · " + p.fans + " fans" : p.leds + " LEDs";
+                                            color: p.used ? Theme.accent : Theme.muted;
+                                            font-size: 12px;
+                                        }
+                                    }
+                                    if p.used: VerticalLayout {
+                                        spacing: 14px;
+                                        VerticalLayout {
+                                            spacing: 4px;
+                                            Label { text: "Name"; }
+                                            TextField {
+                                                text: p.name;
+                                                font-weight: 500;
+                                                edited(t) => { root.port-changed(p.index, t, p.is-fans, p.fans, p.fan-leds, p.leds, p.link); }
+                                            }
+                                        }
+                                        Rectangle {
+                                            border-radius: 12px;
+                                            background: Theme.well;
+                                            HorizontalLayout {
+                                                padding: 12px;
+                                                spacing: 10px;
+                                                alignment: center;
+                                                if p.is-fans: HorizontalLayout {
+                                                    spacing: 10px;
+                                                    for fan in p.preview: FanRing { leds: fan.c; size: 52px; dot: 8px; }
+                                                }
+                                                if !p.is-fans: VerticalLayout {
+                                                    spacing: 3px;
+                                                    for row in p.preview: HorizontalLayout {
+                                                        spacing: 3px;
+                                                        for c in row.c: Rectangle { width: 6px; height: 6px; border-radius: 2px; background: c; }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        HorizontalLayout {
+                                            spacing: 12px;
+                                            alignment: start;
+                                            VerticalLayout {
+                                                spacing: 4px;
+                                                Label { text: "Layout"; }
+                                                Segmented {
+                                                    first: "Strip";
+                                                    second: "Fans";
+                                                    second-selected: p.is-fans;
+                                                    picked(v) => { root.port-changed(p.index, p.name, v, p.fans, p.fan-leds, p.leds, p.link); }
+                                                }
+                                            }
+                                            if p.is-fans: VerticalLayout {
+                                                spacing: 4px;
+                                                Label { text: "Fans × LEDs"; }
+                                                HorizontalLayout {
+                                                    spacing: 6px;
+                                                    Stepper {
+                                                        label: "Fans";
+                                                        value: p.fans;
+                                                        minimum: 1;
+                                                        maximum: 10;
+                                                        changed(v) => { root.port-changed(p.index, p.name, true, v, p.fan-leds, p.leds, p.link); }
+                                                    }
+                                                    Text { text: "×"; vertical-alignment: center; color: Theme.muted; }
+                                                    Stepper {
+                                                        label: "LEDs per fan";
+                                                        value: p.fan-leds;
+                                                        minimum: 1;
+                                                        maximum: 40;
+                                                        changed(v) => { root.port-changed(p.index, p.name, true, p.fans, v, p.leds, p.link); }
+                                                    }
+                                                }
+                                            }
+                                            if !p.is-fans: VerticalLayout {
+                                                spacing: 4px;
+                                                Label { text: "LEDs"; }
+                                                Stepper {
+                                                    label: "LEDs";
+                                                    value: p.leds;
+                                                    minimum: 1;
+                                                    maximum: 80;
+                                                    changed(v) => { root.port-changed(p.index, p.name, false, p.fans, p.fan-leds, v, p.link); }
+                                                }
+                                            }
+                                        }
+                                        VerticalLayout {
+                                            spacing: 4px;
+                                            Label { text: "In games"; }
+                                            ComboBox {
+                                                model: root.link-options;
+                                                current-index: p.link;
+                                                selected(v) => { root.port-changed(p.index, p.name, p.is-fans, p.fans, p.fan-leds, p.leds, self.current-index); }
+                                            }
+                                        }
+                                        Button {
+                                            text: p.flashing ? "Stop identifying" : "Identify (flash white)";
+                                            height-hint: 40px;
+                                            clicked => { root.identify(p.flashing ? -1 : p.index); }
+                                        }
+                                    }
+                                    if !p.used: VerticalLayout {
+                                        spacing: 12px;
+                                        Text { text: "No LEDs set up on this port."; color: Theme.muted; }
+                                        HorizontalLayout {
+                                            alignment: start;
+                                            Button {
+                                                text: "Set up port";
+                                                dashed: true;
+                                                height-hint: 40px;
+                                                clicked => { root.port-changed(p.index, "Port " + (p.index + 1), false, 3, 8, 20, 0); }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ======================================================= Games
+                    if root.page == 3: VerticalLayout {
+                        spacing: 22px;
+                        HorizontalLayout {
+                            PageHeader { eyebrow: "CHROMA SDK"; title: "Games"; }
+                            Rectangle { horizontal-stretch: 1; }
+                            VerticalLayout {
+                                alignment: end;
+                                HorizontalLayout {
+                                    alignment: end;
+                                    SwitchButton {
+                                    text: "Let games control lighting";
+                                    checked: root.games-allowed;
+                                    toggled(v) => { root.set-games-allowed(v); }
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 22px;
+                            alignment: stretch;
+                            VerticalLayout {
+                                horizontal-stretch: 3;
+                                spacing: 22px;
+                                alignment: start;
+                                Card {
+                                    VerticalLayout {
+                                        padding: 20px;
+                                        spacing: 14px;
+                                        Heading { text: "Now playing"; }
+                                        if root.game-title != "": VerticalLayout {
+                                            spacing: 12px;
+                                            HorizontalLayout {
+                                                spacing: 16px;
+                                                Rectangle {
+                                                    width: 48px;
+                                                    height: 48px;
+                                                    border-radius: 12px;
+                                                    background: Theme.game-bg;
+                                                    border-width: 1px;
+                                                    border-color: Theme.danger-line;
+                                                    Icon { name: "games"; tint: Theme.game-fg; width: 22px; height: 22px; }
+                                                }
+                                                VerticalLayout {
+                                                    alignment: center;
+                                                    horizontal-stretch: 1;
+                                                    Text { text: root.game-title; color: Theme.text; font-size: 16px; font-weight: 600; }
+                                                    Text { text: root.game-detail; color: Theme.muted; font-size: 13px; }
+                                                }
+                                                HorizontalLayout {
+                                                    spacing: 6px;
+                                                    alignment: end;
+                                                    for d in root.game-devices: VerticalLayout {
+                                                        alignment: center;
+                                                        Rectangle {
+                                                            border-radius: 12px;
+                                                            background: Theme.game-bg;
+                                                            HorizontalLayout {
+                                                                padding: 4px;
+                                                                padding-left: 10px;
+                                                                padding-right: 10px;
+                                                                Text { text: d; color: Theme.game-chip; font-size: 12px; }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Text { text: "Everything else keeps showing your profile. When the game closes, your profile comes back."; color: Theme.muted; font-size: 13px; wrap: word-wrap; }
+                                        }
+                                        if root.game-title == "": Text {
+                                            text: root.games-allowed ? "No game is using Chroma right now. Your profile is on all devices." : "Games are blocked from taking over the lights.";
+                                            color: Theme.muted;
+                                            wrap: word-wrap;
+                                        }
+                                    }
+                                }
+                                Card {
+                                    VerticalLayout {
+                                        padding: 20px;
+                                        spacing: 6px;
+                                        Heading { text: "Where game lighting goes"; }
+                                        Text { text: "Games draw on Razer's standard device types. Choose which one each of your devices shows."; color: Theme.muted; font-size: 13px; wrap: word-wrap; }
+                                        Rectangle { height: 8px; }
+                                        for m in root.mapping: Rectangle {
+                                            min-height: 56px;
+                                            Rectangle { y: 0; height: 1px; background: #1F2329; }
+                                            HorizontalLayout {
+                                                spacing: 12px;
+                                                VerticalLayout {
+                                                    alignment: center;
+                                                    horizontal-stretch: 1;
+                                                    Text { text: m.name; color: Theme.text; font-weight: 500; }
+                                                    Label { text: m.detail; }
+                                                }
+                                                Text { text: "shows"; vertical-alignment: center; color: Theme.muted; }
+                                                VerticalLayout {
+                                                    alignment: center;
+                                                    ComboBox {
+                                                        width: 200px;
+                                                        model: root.mapping-options;
+                                                        current-index: m.choice;
+                                                        selected(v) => { root.set-mapping(m.id, self.current-index); }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 2;
+                                min-width: 300px;
+                                spacing: 22px;
+                                alignment: start;
+                                Card {
+                                    VerticalLayout {
+                                        padding: 20px;
+                                        spacing: 12px;
+                                        Heading { text: "Game connections"; }
+                                        for c in root.checks: HorizontalLayout {
+                                            spacing: 10px;
+                                            VerticalLayout {
+                                                alignment: start;
+                                                padding-top: 2px;
+                                                Icon { name: c.ok ? "check" : "games"; tint: c.ok ? Theme.accent : Theme.warn; }
+                                            }
+                                            VerticalLayout {
+                                                horizontal-stretch: 1;
+                                                Text { text: c.label; color: Theme.text; }
+                                                Label { text: c.detail; wrap: word-wrap; }
+                                            }
+                                        }
+                                    }
+                                }
+                                Card {
+                                    VerticalLayout {
+                                        padding: 20px;
+                                        spacing: 6px;
+                                        Heading { text: "Recent apps"; }
+                                        if root.apps.length == 0: Text { text: "Apps that use Chroma will show up here."; color: Theme.muted; }
+                                        for a in root.apps: Rectangle {
+                                            min-height: 56px;
+                                            Rectangle { y: 0; height: 1px; background: #1F2329; }
+                                            HorizontalLayout {
+                                                spacing: 12px;
+                                                VerticalLayout {
+                                                    alignment: center;
+                                                    horizontal-stretch: 1;
+                                                    Text { text: a.title; color: Theme.text; font-weight: 500; overflow: elide; }
+                                                    Label { text: a.detail; }
+                                                }
+                                                VerticalLayout {
+                                                    alignment: center;
+                                                    Switch {
+                                                        checked: a.allowed;
+                                                        accessible-label: "Allow " + a.title;
+                                                        toggled(v) => { root.set-app-allowed(a.title, v); }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if root.toast != "": Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: parent.height - self.height - 20px;
+                width: toast-text.preferred-width + 28px;
+                height: 36px;
+                border-radius: 8px;
+                background: Theme.text;
+                toast-text := Text { text: root.toast; color: Theme.bg; }
+            }
+        }
+    }
+}

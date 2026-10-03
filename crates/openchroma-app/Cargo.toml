@@ -1,0 +1,18 @@
+[package]
+name = "openchroma-app"
+version.workspace = true
+edition.workspace = true
+# Slint is used under the GPLv3, which makes this binary GPL-3.0; the rest of
+# OpenChroma is GPL-2.0-or-later and therefore compatible.
+license = "GPL-3.0-or-later"
+description = "OpenChroma desktop app"
+
+[dependencies]
+openchroma = { path = "../openchroma" }
+serde_json.workspace = true
+slint = { version = "1.18", default-features = false, features = ["std", "backend-winit", "renderer-software", "accessibility", "compat-1-2"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+
+[build-dependencies]
+slint-build = "1.18"
+embed-resource = "3"
