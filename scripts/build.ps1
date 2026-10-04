@@ -5,7 +5,9 @@
 #   RzChromaSDK64.dll    Chroma SDK replacement for 64-bit games
 #   RzChromaSDK.dll      Chroma SDK replacement for 32-bit games
 # Native tools write progress to stderr, which Windows PowerShell 5.1 turns
-# into errors under 'Stop'; check exit codes instead.
+# into errors under 'Stop'; check exit codes instead. Set it here rather than
+# inherit the caller's preference, which may well be 'Stop'.
+$ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
