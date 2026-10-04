@@ -324,9 +324,16 @@ For screenshots of the app, `OPENCHROMA_APP_PAGE` (0-3) opens a page and
 
 ## License
 
-GPL-2.0-or-later. The device tables are derived from OpenRGB, which is
-GPL-2.0-or-later.
+GPL-2.0-or-later ([`LICENSE`](LICENSE)). The device tables are derived from
+OpenRGB, which is GPL-2.0-or-later.
 
-The desktop app (`crates/openchroma-app`) is GPL-3.0-or-later, because it uses
-Slint under the GPLv3. It embeds the IBM Plex fonts, which are under the SIL Open
-Font License (`crates/openchroma-app/ui/fonts/LICENSE.txt`).
+The desktop app (`crates/openchroma-app`) is GPL-3.0-or-later
+([`crates/openchroma-app/LICENSE`](crates/openchroma-app/LICENSE)), because it
+uses Slint under the GPLv3. It embeds the IBM Plex fonts, which are under the
+SIL Open Font License (`crates/openchroma-app/ui/fonts/LICENSE.txt`).
+
+OpenChroma is provided as is, without warranty of any kind, and you use it at
+your own risk. It sends commands directly to your devices over USB; see the
+licenses for the full disclaimer of warranty and limitation of liability.
+OpenChroma is not affiliated with or endorsed by Razer or ASUS. Razer, Chroma
+and ASUS Aura are trademarks of their respective owners.
