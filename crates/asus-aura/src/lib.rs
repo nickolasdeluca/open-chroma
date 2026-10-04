@@ -164,8 +164,8 @@ fn color_packets(channel: &Channel, colors: &[[u8; 3]]) -> Vec<[u8; REPORT_LEN]>
             buf[2] = channel.direct | if i == last { APPLY } else { 0 };
             buf[3] = (i * LEDS_PER_PACKET) as u8;
             buf[4] = chunk.len() as u8;
-            for (dst, src) in buf[5..].chunks_exact_mut(3).zip(chunk) {
-                dst.copy_from_slice(src);
+            for (dst, src) in buf[5..].as_chunks_mut::<3>().0.iter_mut().zip(chunk) {
+                *dst = *src;
             }
             buf
         })
