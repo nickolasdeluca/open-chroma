@@ -23,6 +23,19 @@ export struct ChannelPreview {
     strip: [color],
 }
 
+// Everything the setup preview draws. The models live as long as the app;
+// only their colors change.
+export struct SetupView {
+    channels-left: [ChannelPreview],
+    channels-right: [ChannelPreview],
+    case-strips: [ColorRow],
+    keyboard: [ColorRow],
+    motherboard: [ColorRow],
+    // Logo, scroll wheel, underglow.
+    mouse: [color],
+    pad: [color],
+}
+
 export struct EffectOption {
     index: int,
     label: string,
@@ -285,6 +298,66 @@ component DeskPreview inherits VerticalLayout {
     }
 }
 
+// All devices, side by side in wide windows and stacked in narrow ones.
+component SetupPreview inherits VerticalLayout {
+    in property <SetupView> setup;
+    in property <bool> wide;
+    in property <length> dot: 12px;
+    in property <bool> has-case;
+    in property <bool> has-keyboard;
+    in property <bool> has-mouse;
+    in property <bool> has-pad;
+    in property <string> case-caption;
+    alignment: start;
+    if root.wide: HorizontalLayout {
+        spacing: 28px;
+        alignment: start;
+        if root.has-case: CasePreview {
+            channels-left: root.setup.channels-left;
+            channels-right: root.setup.channels-right;
+            strips: root.setup.case-strips;
+            caption: root.case-caption;
+        }
+        if root.setup.motherboard.length > 0: BoardPreview { rows: root.setup.motherboard; }
+        if root.has-keyboard || root.has-mouse || root.has-pad: DeskPreview {
+            has-keyboard: root.has-keyboard;
+            has-mouse: root.has-mouse;
+            has-pad: root.has-pad;
+            keyboard: root.setup.keyboard;
+            dot: root.dot;
+            pad: root.setup.pad[0];
+            logo: root.setup.mouse[0];
+            wheel: root.setup.mouse[1];
+            glow: root.setup.mouse[2];
+        }
+    }
+    if !root.wide: VerticalLayout {
+        spacing: 18px;
+        alignment: start;
+        if root.has-case: HorizontalLayout {
+            alignment: start;
+            CasePreview {
+                channels-left: root.setup.channels-left;
+                channels-right: root.setup.channels-right;
+                strips: root.setup.case-strips;
+                caption: root.case-caption;
+            }
+        }
+        if root.setup.motherboard.length > 0: BoardPreview { rows: root.setup.motherboard; }
+        if root.has-keyboard || root.has-mouse || root.has-pad: DeskPreview {
+            has-keyboard: root.has-keyboard;
+            has-mouse: root.has-mouse;
+            has-pad: root.has-pad;
+            keyboard: root.setup.keyboard;
+            dot: root.dot;
+            pad: root.setup.pad[0];
+            logo: root.setup.mouse[0];
+            wheel: root.setup.mouse[1];
+            glow: root.setup.mouse[2];
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "OpenChroma";
     icon: @image-url("icon.png");
@@ -324,15 +397,7 @@ export component AppWindow inherits Window {
     in property <bool> has-keyboard;
     in property <bool> has-mouse;
     in property <bool> has-pad;
-    in property <[ChannelPreview]> channels-left;
-    in property <[ChannelPreview]> channels-right;
-    in property <[ColorRow]> case-strips;
-    in property <[ColorRow]> keyboard;
-    in property <[ColorRow]> motherboard;
-    in property <color> mouse-glow;
-    in property <color> mouse-wheel;
-    in property <color> mouse-logo;
-    in property <color> pad;
+    in property <SetupView> setup;
     in property <string> case-caption;
     callback activate-profile(string);
     callback edit-profile(string);
@@ -553,53 +618,16 @@ export component AppWindow inherits Window {
                                         Rectangle { horizontal-stretch: 1; }
                                         Label { text: "Live preview"; vertical-alignment: center; }
                                     }
-                                    if root.width >= 1440px: HorizontalLayout {
-                                        spacing: 28px;
-                                        alignment: start;
-                                        if root.has-case: CasePreview {
-                                            channels-left: root.channels-left;
-                                            channels-right: root.channels-right;
-                                            strips: root.case-strips;
-                                            caption: root.case-caption;
-                                        }
-                                        if root.motherboard.length > 0: BoardPreview { rows: root.motherboard; }
-                                        if root.has-keyboard || root.has-mouse || root.has-pad: DeskPreview {
-                                            has-keyboard: root.has-keyboard;
-                                            has-mouse: root.has-mouse;
-                                            has-pad: root.has-pad;
-                                            keyboard: root.keyboard;
-                                            pad: root.pad;
-                                            glow: root.mouse-glow;
-                                            wheel: root.mouse-wheel;
-                                            logo: root.mouse-logo;
-                                        }
-                                    }
-                                    // Narrow windows stack the devices.
-                                    if root.width < 1440px: VerticalLayout {
-                                        spacing: 18px;
-                                        alignment: start;
-                                        if root.has-case: HorizontalLayout {
-                                            alignment: start;
-                                            CasePreview {
-                                                channels-left: root.channels-left;
-                                                channels-right: root.channels-right;
-                                                strips: root.case-strips;
-                                                caption: root.case-caption;
-                                            }
-                                        }
-                                        if root.motherboard.length > 0: BoardPreview { rows: root.motherboard; }
-                                        if root.has-keyboard || root.has-mouse || root.has-pad: DeskPreview {
-                                            has-keyboard: root.has-keyboard;
-                                            has-mouse: root.has-mouse;
-                                            has-pad: root.has-pad;
-                                            keyboard: root.keyboard;
-                                            // Smaller keys keep the narrowest window usable.
-                                            dot: root.width < 1180px ? 10px : 12px;
-                                            pad: root.pad;
-                                            glow: root.mouse-glow;
-                                            wheel: root.mouse-wheel;
-                                            logo: root.mouse-logo;
-                                        }
+                                    SetupPreview {
+                                        setup: root.setup;
+                                        wide: root.width >= 1440px;
+                                        // Smaller keys keep the narrowest window usable.
+                                        dot: root.width < 1180px ? 10px : 12px;
+                                        has-case: root.has-case;
+                                        has-keyboard: root.has-keyboard;
+                                        has-mouse: root.has-mouse;
+                                        has-pad: root.has-pad;
+                                        case-caption: root.case-caption;
                                     }
                                 }
                             }

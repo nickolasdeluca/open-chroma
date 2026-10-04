@@ -13,7 +13,8 @@ use slint::{Color, Model, ModelRc, SharedString, VecModel};
 
 use crate::state::{self, State, EFFECT_LABELS, MAPPING_OPTIONS, MAPPING_SOURCES, ZONE_OPTIONS};
 use crate::{
-    AppRow, AppWindow, ChannelPreview, CheckRow, ColorRow, EffectOption, EffectRow, MappingRow, PortEdit, PortRow, ProfileItem, ZoneItem,
+    AppRow, AppWindow, ChannelPreview, CheckRow, ColorRow, EffectOption, EffectRow, MappingRow, PortEdit, PortRow, ProfileItem, SetupView,
+    ZoneItem,
 };
 
 fn rgb(hex: &str) -> Color {
@@ -148,13 +149,86 @@ impl Channel {
     }
 }
 
-pub struct Views {
+/// LED colors per device id, rows as in the service's status.
+type Previews = std::collections::BTreeMap<String, Vec<Vec<Color>>>;
+
+/// The models behind one `SetupPreview`.
+struct Setup {
     keyboard: Leds,
     case_strips: Leds,
     motherboard: Leds,
     channels: Vec<Channel>,
     channels_left: Rc<VecModel<ChannelPreview>>,
     channels_right: Rc<VecModel<ChannelPreview>>,
+    mouse: Rc<VecModel<Color>>,
+    pad: Rc<VecModel<Color>>,
+}
+
+impl Setup {
+    fn new() -> Setup {
+        Setup {
+            keyboard: Leds::new(),
+            case_strips: Leds::new(),
+            motherboard: Leds::new(),
+            channels: (0..6).map(|_| Channel::new()).collect(),
+            channels_left: Rc::new(VecModel::default()),
+            channels_right: Rc::new(VecModel::default()),
+            mouse: Rc::new(VecModel::default()),
+            pad: Rc::new(VecModel::default()),
+        }
+    }
+
+    fn view(&self) -> SetupView {
+        SetupView {
+            keyboard: self.keyboard.model(),
+            case_strips: self.case_strips.model(),
+            motherboard: self.motherboard.model(),
+            channels_left: ModelRc::from(self.channels_left.clone()),
+            channels_right: ModelRc::from(self.channels_right.clone()),
+            mouse: ModelRc::from(self.mouse.clone()),
+            pad: ModelRc::from(self.pad.clone()),
+        }
+    }
+
+    fn sync(&mut self, config: &Config, previews: &Previews) {
+        let device = |id: &str| previews.get(id).cloned().unwrap_or_default();
+        self.keyboard.sync(device("keyboard"));
+        self.case_strips.sync(device("case"));
+
+        let argb = device("argb");
+        let used = used_channels(config);
+        for &i in &used {
+            let leds = argb.get(i).cloned().unwrap_or_default();
+            self.channels[i].sync(&config.argb_channels[i], &leds);
+        }
+        let channels: Vec<ChannelPreview> = used
+            .iter()
+            .map(|&i| self.channels[i].preview(&config.argb_channels[i].name, !config.argb_channels[i].fans.is_empty()))
+            .collect();
+        let (left, right) = channels.split_at(channels.len().min(1));
+        sync(&self.channels_left, left.to_vec());
+        sync(&self.channels_right, right.to_vec());
+
+        // Headers without a configured length have empty rows; leave them out.
+        self.motherboard.sync(device("motherboard").into_iter().filter(|r| !r.is_empty()).collect());
+
+        let m = device("mouse").into_iter().next().unwrap_or_default();
+        if m.len() >= 2 {
+            sync(&self.mouse, vec![m[0], m[1], m.get(m.len() / 2 + 1).copied().unwrap_or(m[0])]);
+        }
+        if let Some(&c) = device("mousepad").first().and_then(|r| r.first()) {
+            sync(&self.pad, vec![c]);
+        }
+    }
+}
+
+/// ARGB channels with LEDs set up, which are the ones the preview draws.
+fn used_channels(config: &Config) -> Vec<usize> {
+    (0..config.argb_channels.len().min(6)).filter(|&i| config.argb_channels[i].leds > 0).collect()
+}
+
+pub struct Views {
+    setup: Setup,
     profiles: Rc<VecModel<ProfileItem>>,
     preview_strip: Rc<VecModel<Color>>,
     editor_colors: Rc<VecModel<Color>>,
@@ -176,12 +250,7 @@ impl Views {
     /// Create the models and attach them to the window once.
     pub fn new(ui: &AppWindow) -> Views {
         let v = Views {
-            keyboard: Leds::new(),
-            case_strips: Leds::new(),
-            motherboard: Leds::new(),
-            channels: (0..6).map(|_| Channel::new()).collect(),
-            channels_left: Rc::new(VecModel::default()),
-            channels_right: Rc::new(VecModel::default()),
+            setup: Setup::new(),
             profiles: Rc::new(VecModel::default()),
             preview_strip: Rc::new(VecModel::default()),
             editor_colors: Rc::new(VecModel::default()),
@@ -194,11 +263,7 @@ impl Views {
             game_devices: Rc::new(VecModel::default()),
             editor_shown: String::new(),
         };
-        ui.set_keyboard(v.keyboard.model());
-        ui.set_case_strips(v.case_strips.model());
-        ui.set_motherboard(v.motherboard.model());
-        ui.set_channels_left(ModelRc::from(v.channels_left.clone()));
-        ui.set_channels_right(ModelRc::from(v.channels_right.clone()));
+        ui.set_setup(v.setup.view());
         ui.set_profiles(ModelRc::from(v.profiles.clone()));
         ui.set_preview_strip(ModelRc::from(v.preview_strip.clone()));
         ui.set_editor_colors(ModelRc::from(v.editor_colors.clone()));
@@ -252,7 +317,6 @@ impl Views {
     pub fn refresh(&mut self, ui: &AppWindow, state: &State, status: &Value) {
         let Some(config) = state.config.as_ref() else { return };
         let devices: Vec<&Value> = status["devices"].as_array().map(|d| d.iter().collect()).unwrap_or_default();
-        let device = |id: &str| devices.iter().copied().find(|d| d["id"] == id);
         let preview = |d: &Value| -> Vec<Vec<Color>> {
             d["preview"]
                 .as_array()
@@ -271,51 +335,23 @@ impl Views {
         ui.set_games_allowed(config.sdk_enabled);
 
         // ---- setup preview
-        let keyboard = device("keyboard").map(preview).unwrap_or_default();
-        ui.set_has_keyboard(!keyboard.is_empty());
-        self.keyboard.sync(keyboard.clone());
-
-        let case = device("case").map(preview).unwrap_or_default();
-        self.case_strips.sync(case.clone());
-
-        let argb = device("argb").map(preview).unwrap_or_default();
-        let used: Vec<usize> = (0..config.argb_channels.len().min(6)).filter(|&i| config.argb_channels[i].leds > 0).collect();
-        for &i in &used {
-            let leds = argb.get(i).cloned().unwrap_or_default();
-            self.channels[i].sync(&config.argb_channels[i], &leds);
-        }
-        let previews: Vec<ChannelPreview> = used
-            .iter()
-            .map(|&i| self.channels[i].preview(&config.argb_channels[i].name, !config.argb_channels[i].fans.is_empty()))
-            .collect();
-        let (left, right) = previews.split_at(previews.len().min(1));
-        sync(&self.channels_left, left.to_vec());
-        sync(&self.channels_right, right.to_vec());
-        ui.set_has_case(!case.is_empty() || !used.is_empty());
+        let previews: Previews = devices.iter().filter_map(|d| Some((d["id"].as_str()?.to_string(), preview(d)))).collect();
+        let has = |id: &str| previews.get(id).is_some_and(|rows| rows.iter().any(|r| !r.is_empty()));
+        self.setup.sync(config, &previews);
+        let used = used_channels(config);
+        ui.set_has_keyboard(has("keyboard"));
+        ui.set_has_mouse(has("mouse"));
+        ui.set_has_pad(has("mousepad"));
+        ui.set_has_case(has("case") || !used.is_empty());
         let mut caption = Vec::new();
-        if !case.is_empty() {
+        if has("case") {
             caption.push("Lian Li O11 Dynamic".to_string());
         }
         caption.extend(used.iter().map(|&i| config.argb_channels[i].name.clone()));
         ui.set_case_caption(caption.join(" · ").into());
-
-        // Headers without a configured length have empty rows; leave them out.
-        let board = device("motherboard").map(preview).unwrap_or_default();
-        self.motherboard.sync(board.into_iter().filter(|r| !r.is_empty()).collect());
-
-        let mouse = device("mouse").map(preview).unwrap_or_default();
-        let m = mouse.first().cloned().unwrap_or_default();
-        ui.set_has_mouse(!m.is_empty());
-        if m.len() >= 2 {
-            ui.set_mouse_logo(m[0]);
-            ui.set_mouse_wheel(m[1]);
-            ui.set_mouse_glow(m.get(m.len() / 2 + 1).copied().unwrap_or(m[0]));
-        }
-        let pad = device("mousepad").map(preview).unwrap_or_default();
-        ui.set_has_pad(!pad.is_empty());
-        if let Some(&c) = pad.first().and_then(|r| r.first()) {
-            ui.set_pad(c);
-        }
+        let keyboard = previews.get("keyboard").cloned().unwrap_or_default();
+        let case = previews.get("case").cloned().unwrap_or_default();
+        let argb = previews.get("argb").cloned().unwrap_or_default();
 
         // ---- profiles
         sync(
