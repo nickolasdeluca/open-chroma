@@ -971,24 +971,26 @@ export component AppWindow inherits Window {
                                                 }
                                             }
                                         }
-                                        HorizontalLayout {
-                                            spacing: 12px;
-                                            alignment: start;
+                                        // Stacked, not side by side: at the minimum window width a
+                                        // card is ~240px, too narrow for the toggle and both steppers.
+                                        VerticalLayout {
+                                            spacing: 14px;
                                             VerticalLayout {
                                                 spacing: 4px;
                                                 Label { text: "Layout"; }
-                                                Segmented {
+                                                HorizontalLayout { alignment: start; Segmented {
                                                     first: "Strip";
                                                     second: "Fans";
                                                     second-selected: p.is-fans;
                                                     picked(v) => { root.port-changed(p.index, p.name, v, p.fans, p.fan-leds, p.leds, p.link); }
-                                                }
+                                                } }
                                             }
                                             if p.is-fans: VerticalLayout {
                                                 spacing: 4px;
                                                 Label { text: "Fans × LEDs"; }
                                                 HorizontalLayout {
                                                     spacing: 6px;
+                                                    alignment: start;
                                                     Stepper {
                                                         label: "Fans";
                                                         value: p.fans;
@@ -1009,13 +1011,13 @@ export component AppWindow inherits Window {
                                             if !p.is-fans: VerticalLayout {
                                                 spacing: 4px;
                                                 Label { text: "LEDs"; }
-                                                Stepper {
+                                                HorizontalLayout { alignment: start; Stepper {
                                                     label: "LEDs";
                                                     value: p.leds;
                                                     minimum: 1;
                                                     maximum: 80;
                                                     changed(v) => { root.port-changed(p.index, p.name, false, p.fans, p.fan-leds, v, p.link); }
-                                                }
+                                                } }
                                             }
                                         }
                                         VerticalLayout {
