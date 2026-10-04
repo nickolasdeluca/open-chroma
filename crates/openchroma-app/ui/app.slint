@@ -958,9 +958,15 @@ export component AppWindow inherits Window {
                                                 padding: 12px;
                                                 spacing: 10px;
                                                 alignment: center;
+                                                // Rings shrink with the fan count so up to 10 fit in the
+                                                // ~176px a card's preview has at the minimum window width.
                                                 if p.is-fans: HorizontalLayout {
-                                                    spacing: 10px;
-                                                    for fan in p.preview: FanRing { leds: fan.c; size: 52px; dot: 8px; }
+                                                    spacing: p.preview.length > 3 ? 6px : 10px;
+                                                    for fan in p.preview: FanRing {
+                                                        leds: fan.c;
+                                                        size: Math.min(52px, (176px - (p.preview.length - 1) * 6px) / Math.max(1, p.preview.length));
+                                                        dot: Math.max(3px, self.size * 8 / 52);
+                                                    }
                                                 }
                                                 if !p.is-fans: VerticalLayout {
                                                     spacing: 3px;
