@@ -280,6 +280,11 @@ fn main() -> Result<(), slint::PlatformError> {
         let c = app.state.set_background(views::from_slint(color));
         app.commit(c)
     });
+    on!(on_set_hex, |app, i: i32, text: slint::SharedString| {
+        let Some(color) = openchroma::color::Color::parse(text.trim()) else { return };
+        let c = if i < 0 { app.state.set_background(color) } else { app.state.set_color(i as usize, color) };
+        app.commit(c)
+    });
     on!(on_set_speed, |app, v: f32| {
         let c = app.state.set_speed(v);
         app.commit(c)

@@ -16,11 +16,6 @@ use crate::{
     AppRow, AppWindow, ChannelPreview, CheckRow, ColorRow, EffectOption, EffectRow, MappingRow, PortEdit, PortRow, ProfileItem, ZoneItem,
 };
 
-const PRESETS: [&str; 16] = [
-    "#ffffff", "#ff2000", "#ff7000", "#ffd000", "#a0ff00", "#44d62c", "#00ffa0", "#00c8ff", "#0060ff", "#0010ff", "#7a3cff", "#c000ff",
-    "#ff00a0", "#ff6f91", "#40a0ff", "#000010",
-];
-
 fn rgb(hex: &str) -> Color {
     let v = u32::from_str_radix(hex.trim_start_matches('#'), 16).unwrap_or(0);
     Color::from_rgb_u8((v >> 16) as u8, (v >> 8) as u8, v as u8)
@@ -225,7 +220,6 @@ impl Views {
             "Chroma Link LED 3",
             "Chroma Link LED 4",
         ]));
-        ui.set_color_presets(ModelRc::new(VecModel::from(PRESETS.iter().map(|h| rgb(h)).collect::<Vec<_>>())));
 
         // Effect cards never change; their swatches show the effect, not the
         // profile's colors.

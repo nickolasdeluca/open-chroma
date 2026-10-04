@@ -254,6 +254,126 @@ export component TextField inherits Rectangle {
     }
 }
 
+// Saturation/brightness square, hue bar and hex field. Hue, saturation and
+// brightness are kept here rather than derived from `color`, so dragging
+// through grey or black doesn't lose the hue.
+export component ColorPicker inherits VerticalLayout {
+    in property <color> color;
+    callback changed(color);
+    // The app parses the hex; Slint can't slice strings.
+    callback hex-entered(string);
+    property <float> hue;
+    property <float> sat;
+    property <float> val;
+    property <[string]> digits: ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f"];
+    spacing: 10px;
+
+    function byte(n: int) -> string {
+        return root.digits[Math.floor(n / 16)] + root.digits[Math.mod(n, 16)];
+    }
+    function to-hex(c: color) -> string {
+        return "#" + byte(c.red) + byte(c.green) + byte(c.blue);
+    }
+    function sync() {
+        let h = root.color.to-hsv();
+        root.hue = h.hue;
+        root.sat = h.saturation;
+        root.val = h.value;
+        hex.text = to-hex(root.color);
+    }
+    function pick() {
+        let c = hsv(root.hue, root.sat, root.val);
+        hex.text = to-hex(c);
+        root.changed(c);
+    }
+    init => { sync(); }
+    // Our own picks come back as the same color; only resync on outside
+    // changes, such as switching to another swatch.
+    changed color => {
+        if (root.color != hsv(root.hue, root.sat, root.val)) {
+            sync();
+        }
+    }
+
+    Rectangle {
+        width: 240px;
+        height: 150px;
+        border-radius: 8px;
+        clip: true;
+        background: hsv(root.hue, 1, 1);
+        Rectangle { background: @linear-gradient(90deg, #ffffff 0%, #ffffff00 100%); }
+        Rectangle { background: @linear-gradient(180deg, #00000000 0%, #000000 100%); }
+        Rectangle {
+            x: root.sat * parent.width - 7px;
+            y: (1 - root.val) * parent.height - 7px;
+            width: 14px;
+            height: 14px;
+            border-radius: 7px;
+            border-width: 2px;
+            border-color: #ffffff;
+            background: hsv(root.hue, root.sat, root.val);
+        }
+        sv := TouchArea {
+            mouse-cursor: crosshair;
+            function set() {
+                root.sat = Math.clamp(self.mouse-x / self.width, 0, 1);
+                root.val = 1 - Math.clamp(self.mouse-y / self.height, 0, 1);
+                root.pick();
+            }
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) { set(); }
+            }
+            moved => {
+                if (self.pressed) { set(); }
+            }
+        }
+    }
+    Rectangle {
+        width: 240px;
+        height: 14px;
+        border-radius: 7px;
+        background: @linear-gradient(90deg, #ff0000 0%, #ffff00 16.67%, #00ff00 33.33%, #00ffff 50%, #0000ff 66.67%, #ff00ff 83.33%, #ff0000 100%);
+        Rectangle {
+            x: root.hue / 360 * (parent.width - 14px);
+            width: 14px;
+            height: 14px;
+            border-radius: 7px;
+            border-width: 2px;
+            border-color: #ffffff;
+            background: hsv(root.hue, 1, 1);
+        }
+        TouchArea {
+            mouse-cursor: pointer;
+            function set() {
+                root.hue = Math.clamp(self.mouse-x / self.width, 0, 1) * 359.9;
+                root.pick();
+            }
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) { set(); }
+            }
+            moved => {
+                if (self.pressed) { set(); }
+            }
+        }
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+        Rectangle {
+            width: 40px;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.line2;
+            background: root.color;
+        }
+        hex := TextField {
+            width: 120px;
+            font-size: 13px;
+            accepted(t) => { root.hex-entered(t); }
+        }
+    }
+}
+
 // [−] value [+] number stepper.
 export component Stepper inherits Rectangle {
     in property <int> value;

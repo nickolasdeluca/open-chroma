@@ -3,7 +3,7 @@
 // which mirrors the service's control API.
 
 import { ScrollView, ComboBox } from "std-widgets.slint";
-import { Theme, Icon, Card, Label, Heading, Button, LinkButton, Switch, SwitchButton, Slider, TextField, Stepper, Segmented, FanRing } from "widgets.slint";
+import { Theme, Icon, Card, Label, Heading, Button, LinkButton, Switch, SwitchButton, Slider, TextField, Stepper, Segmented, FanRing, ColorPicker } from "widgets.slint";
 
 export struct ColorRow {
     c: [color],
@@ -353,7 +353,6 @@ export component AppWindow inherits Window {
     in property <[color]> preview-strip;
     in property <[ZoneItem]> zones;
     in property <[string]> zone-options;
-    in property <[color]> color-presets;
     callback rename-profile(string);
     callback duplicate-profile();
     callback delete-profile();
@@ -362,6 +361,8 @@ export component AppWindow inherits Window {
     callback add-color();
     callback remove-color(int);
     callback set-background(color);
+    // A typed hex color for the swatch being picked; -1 = background.
+    callback set-hex(int, string);
     callback set-speed(float);
     callback set-reverse(bool);
     callback set-zone(string, int);
@@ -795,7 +796,7 @@ export component AppWindow inherits Window {
                                                 }
                                             }
                                         }
-                                        // Inline color palette for the selected swatch.
+                                        // Inline color picker for the selected swatch.
                                         if root.picking > -2 && (root.show-colors || root.show-background): VerticalLayout {
                                             spacing: 8px;
                                             HorizontalLayout {
@@ -807,26 +808,13 @@ export component AppWindow inherits Window {
                                                 }
                                             }
                                             HorizontalLayout {
-                                                spacing: 6px;
                                                 alignment: start;
-                                                for p[pi] in root.color-presets: Rectangle {
-                                                    accessible-role: button;
-                                                    accessible-label: "Preset color " + (pi + 1);
-                                                    accessible-action-default => {
-                                                        if (root.picking == -1) { root.set-background(p); } else { root.set-color(root.picking, p); }
+                                                ColorPicker {
+                                                    color: root.picking == -1 ? root.editor-background : root.editor-colors[root.picking];
+                                                    changed(c) => {
+                                                        if (root.picking == -1) { root.set-background(c); } else { root.set-color(root.picking, c); }
                                                     }
-                                                    width: 28px;
-                                                    height: 28px;
-                                                    border-radius: 7px;
-                                                    border-width: 1px;
-                                                    border-color: Theme.line2;
-                                                    background: p;
-                                                    TouchArea {
-                                                        mouse-cursor: pointer;
-                                                        clicked => {
-                                                            if (root.picking == -1) { root.set-background(p); } else { root.set-color(root.picking, p); }
-                                                        }
-                                                    }
+                                                    hex-entered(t) => { root.set-hex(root.picking, t); }
                                                 }
                                             }
                                         }
