@@ -67,6 +67,10 @@ jobs:
           if (-not $version) { $version = 'dev' }
           New-Item -ItemType Directory out | Out-Null
           Copy-Item scripts/razer-services.ps1 dist/
+          # The licenses' warranty disclaimers have to travel with the binaries.
+          Copy-Item LICENSE dist/LICENSE.txt
+          Copy-Item crates/openchroma-app/LICENSE dist/LICENSE-app.txt
+          Copy-Item crates/openchroma-app/ui/fonts/LICENSE.txt dist/LICENSE-fonts.txt
           Compress-Archive -Path dist/* -DestinationPath "out/OpenChroma-$version-windows-x64.zip"
           # The installer learns which repository to download from here.
           (Get-Content scripts/install.ps1 -Raw).Replace('__REPO__', '${{ github.repository }}') |

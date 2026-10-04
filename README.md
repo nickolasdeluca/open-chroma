@@ -80,7 +80,8 @@ and a layout in `crates/openchroma/src/layout.rs`.
 request. When a push to `main` contains releasable commits, it also tags
 `vX.Y.Z` and publishes a GitHub release. The release contains:
 
-- `OpenChroma-X.Y.Z-windows-x64.zip`: the binaries and `razer-services.ps1`
+- `OpenChroma-X.Y.Z-windows-x64.zip`: the binaries, `razer-services.ps1` and
+  the license texts
 - `install.ps1`
 - `SHA256SUMS.txt`
 
