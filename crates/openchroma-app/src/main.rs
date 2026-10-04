@@ -297,6 +297,30 @@ fn main() -> Result<(), slint::PlatformError> {
         let c = app.state.set_zone(&key, choice as usize);
         app.commit(c)
     });
+    on!(on_paint_led, |app, device: slint::SharedString, row: i32, fan: i32, led: i32| {
+        let (Some(ui), Some(config)) = (app.ui.upgrade(), app.state.config.as_ref()) else { return };
+        let index = |v: i32| usize::try_from(v).unwrap_or(usize::MAX);
+        let tool = ui.get_paint_tool();
+        let cells = match tool {
+            2 => app.views.device_cells(&device),
+            _ => app.views.cells(config, &device, index(row), index(fan), index(led)),
+        };
+        let color = views::from_slint(ui.get_paint_color());
+        let c = match tool {
+            0 | 2 => app.state.paint(&device, &cells, Some(color)),
+            1 => app.state.paint(&device, &cells, None),
+            _ => app.state.erase_device(&device),
+        };
+        app.commit(c)
+    });
+    on!(on_paint_hex, |app, text: slint::SharedString| {
+        let (Some(ui), Some(color)) = (app.ui.upgrade(), openchroma::color::Color::parse(text.trim())) else { return };
+        ui.set_paint_color(views::to_slint(color));
+    });
+    on!(on_clear_paint, |app| {
+        let c = app.state.erase_all();
+        app.commit(c)
+    });
     on!(on_set_mapping, |app, id: slint::SharedString, choice: i32| {
         let c = app.state.set_mapping(&id, choice as usize);
         app.commit(c)

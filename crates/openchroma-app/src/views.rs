@@ -22,7 +22,7 @@ fn rgb(hex: &str) -> Color {
     Color::from_rgb_u8((v >> 16) as u8, (v >> 8) as u8, v as u8)
 }
 
-fn to_slint(c: openchroma::color::Color) -> Color {
+pub fn to_slint(c: openchroma::color::Color) -> Color {
     Color::from_rgb_u8(c.0.r, c.0.g, c.0.b)
 }
 
@@ -144,8 +144,14 @@ impl Channel {
         }
     }
 
-    fn preview(&self, name: &str, is_fans: bool) -> ChannelPreview {
-        ChannelPreview { name: name.into(), is_fans, fans: self.fans.model(), strip: ModelRc::from(self.strip.clone()) }
+    fn preview(&self, index: usize, name: &str, is_fans: bool) -> ChannelPreview {
+        ChannelPreview {
+            index: index as i32,
+            name: name.into(),
+            is_fans,
+            fans: self.fans.model(),
+            strip: ModelRc::from(self.strip.clone()),
+        }
     }
 }
 
@@ -203,7 +209,7 @@ impl Setup {
         }
         let channels: Vec<ChannelPreview> = used
             .iter()
-            .map(|&i| self.channels[i].preview(&config.argb_channels[i].name, !config.argb_channels[i].fans.is_empty()))
+            .map(|&i| self.channels[i].preview(i, &config.argb_channels[i].name, !config.argb_channels[i].fans.is_empty()))
             .collect();
         let (left, right) = channels.split_at(channels.len().min(1));
         sync(&self.channels_left, left.to_vec());
@@ -229,6 +235,10 @@ fn used_channels(config: &Config) -> Vec<usize> {
 
 pub struct Views {
     setup: Setup,
+    /// The setup with the edited profile's paint on top.
+    paint: Setup,
+    /// Row lengths per device, as last reported by the service.
+    shapes: Previews,
     profiles: Rc<VecModel<ProfileItem>>,
     preview_strip: Rc<VecModel<Color>>,
     editor_colors: Rc<VecModel<Color>>,
@@ -251,6 +261,8 @@ impl Views {
     pub fn new(ui: &AppWindow) -> Views {
         let v = Views {
             setup: Setup::new(),
+            paint: Setup::new(),
+            shapes: Previews::new(),
             profiles: Rc::new(VecModel::default()),
             preview_strip: Rc::new(VecModel::default()),
             editor_colors: Rc::new(VecModel::default()),
@@ -264,6 +276,7 @@ impl Views {
             editor_shown: String::new(),
         };
         ui.set_setup(v.setup.view());
+        ui.set_paint_setup(v.paint.view());
         ui.set_profiles(ModelRc::from(v.profiles.clone()));
         ui.set_preview_strip(ModelRc::from(v.preview_strip.clone()));
         ui.set_editor_colors(ModelRc::from(v.editor_colors.clone()));
@@ -338,6 +351,20 @@ impl Views {
         let previews: Previews = devices.iter().filter_map(|d| Some((d["id"].as_str()?.to_string(), preview(d)))).collect();
         let has = |id: &str| previews.get(id).is_some_and(|rows| rows.iter().any(|r| !r.is_empty()));
         self.setup.sync(config, &previews);
+        if let Some(profile) = state.profile() {
+            let mut painted = previews.clone();
+            for (id, rows) in painted.iter_mut() {
+                for (r, row) in rows.iter_mut().enumerate() {
+                    for (c, led) in row.iter_mut().enumerate() {
+                        if let Some(color) = profile.painted(id, r, c) {
+                            *led = to_slint(color);
+                        }
+                    }
+                }
+            }
+            self.paint.sync(config, &painted);
+            ui.set_has_paint(!profile.paint.is_empty());
+        }
         let used = used_channels(config);
         ui.set_has_keyboard(has("keyboard"));
         ui.set_has_mouse(has("mouse"));
@@ -352,6 +379,7 @@ impl Views {
         let keyboard = previews.get("keyboard").cloned().unwrap_or_default();
         let case = previews.get("case").cloned().unwrap_or_default();
         let argb = previews.get("argb").cloned().unwrap_or_default();
+        self.shapes = previews;
 
         // ---- profiles
         sync(
@@ -450,6 +478,34 @@ impl Views {
             zone("motherboard", "Motherboard", "ASUS Aura");
         }
         sync(&self.zones, zones);
+    }
+
+    /// The LEDs (row, column) behind a click in the setup preview; see
+    /// `paint` in `SetupPreview`.
+    pub fn cells(&self, config: &Config, device: &str, row: usize, fan: usize, led: usize) -> Vec<(usize, usize)> {
+        let rows = self.shapes.get(device).map(Vec::as_slice).unwrap_or_default();
+        let cells = match device {
+            "argb" => {
+                let fans = config.argb_channels.get(row).map(|c| c.fans.as_slice()).unwrap_or_default();
+                let offset: usize = fans.iter().take(fan).map(|&n| n as usize).sum();
+                vec![(row, offset + led)]
+            }
+            // The preview leaves out headers without LEDs.
+            "motherboard" => match rows.iter().enumerate().filter(|(_, r)| !r.is_empty()).nth(row) {
+                Some((r, _)) => vec![(r, led)],
+                None => Vec::new(),
+            },
+            // Logo, scroll wheel, then the underglow is drawn as one.
+            "mouse" if led >= 2 => (2..rows.first().map_or(0, Vec::len)).map(|c| (0, c)).collect(),
+            _ => vec![(row, led)],
+        };
+        cells.into_iter().filter(|&(r, c)| rows.get(r).is_some_and(|row| c < row.len())).collect()
+    }
+
+    /// Every LED of a device.
+    pub fn device_cells(&self, device: &str) -> Vec<(usize, usize)> {
+        let rows = self.shapes.get(device).map(Vec::as_slice).unwrap_or_default();
+        rows.iter().enumerate().flat_map(|(r, row)| (0..row.len()).map(move |c| (r, c))).collect()
     }
 
     fn refresh_ports(&mut self, ui: &AppWindow, state: &State, status: &Value, argb: &[Vec<Color>]) {

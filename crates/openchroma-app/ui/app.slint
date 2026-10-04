@@ -17,6 +17,8 @@ export struct ProfileItem {
 }
 
 export struct ChannelPreview {
+    // ARGB channel, 0-5.
+    index: int,
     name: string,
     is-fans: bool,
     fans: [ColorRow],
@@ -135,10 +137,42 @@ component Swatch inherits Rectangle {
 component Dot inherits Rectangle {
     in property <color> c;
     in property <length> size: 13px;
+    in property <length> radius: 3px;
+    in property <bool> paintable;
+    callback clicked;
     width: size;
     height: size;
-    border-radius: 3px;
+    border-radius: radius;
     background: c;
+    border-width: touch.has-hover ? 1px : 0;
+    border-color: Theme.text;
+    touch := TouchArea {
+        enabled: root.paintable;
+        mouse-cursor: root.paintable ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+}
+
+// A paint tool in the profile editor.
+component ToolButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    callback clicked;
+    accessible-role: button;
+    accessible-label: text;
+    accessible-checked: selected;
+    accessible-action-default => { clicked(); }
+    height: 38px;
+    border-radius: 9px;
+    border-width: 1px;
+    border-color: selected ? Theme.accent-border : Theme.line2;
+    background: selected ? Theme.accent-bg : touch.has-hover ? #1C2026 : transparent;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        Text { text: root.text; vertical-alignment: center; color: root.selected ? Theme.text : Theme.text2; }
+    }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
 }
 
 component PageHeader inherits VerticalLayout {
@@ -162,15 +196,28 @@ component PageHeader inherits VerticalLayout {
 // A column of fans or a vertical strip for one ARGB channel.
 component ChannelColumn inherits VerticalLayout {
     in property <ChannelPreview> channel;
+    in property <bool> paintable;
+    // Fan (0 for a strip) and LED within it.
+    callback paint(int, int);
     spacing: 8px;
     alignment: center;
     if channel.is-fans: VerticalLayout {
         spacing: 8px;
-        for fan in root.channel.fans: FanRing { leds: fan.c; }
+        for fan[f] in root.channel.fans: FanRing {
+            leds: fan.c;
+            paintable: root.paintable;
+            clicked-led(i) => { root.paint(f, i); }
+        }
     }
     if !channel.is-fans: VerticalLayout {
         spacing: 3px;
-        for c in root.channel.strip: Rectangle { width: 6px; height: 6px; border-radius: 2px; background: c; }
+        for c[i] in root.channel.strip: Dot {
+            c: c;
+            size: 6px;
+            radius: 2px;
+            paintable: root.paintable;
+            clicked => { root.paint(0, i); }
+        }
     }
 }
 
@@ -180,6 +227,11 @@ component CasePreview inherits VerticalLayout {
     in property <[ChannelPreview]> channels-right;
     in property <[ColorRow]> strips;
     in property <string> caption;
+    in property <bool> paintable;
+    // ARGB channel, fan, LED.
+    callback paint-channel(int, int, int);
+    // Case strip, LED.
+    callback paint-strip(int, int);
     spacing: 10px;
     alignment: end;
     Rectangle {
@@ -190,17 +242,31 @@ component CasePreview inherits VerticalLayout {
         HorizontalLayout {
             padding: 18px;
             spacing: 20px;
-            for ch in root.channels-left: ChannelColumn { channel: ch; }
+            for ch in root.channels-left: ChannelColumn {
+                channel: ch;
+                paintable: root.paintable;
+                paint(f, i) => { root.paint-channel(ch.index, f, i); }
+            }
             HorizontalLayout {
                 spacing: 6px;
                 alignment: center;
-                for strip in root.strips: VerticalLayout {
+                for strip[r] in root.strips: VerticalLayout {
                     spacing: 3px;
                     alignment: center;
-                    for c in strip.c: Rectangle { width: 6px; height: 6px; border-radius: 2px; background: c; }
+                    for c[i] in strip.c: Dot {
+                        c: c;
+                        size: 6px;
+                        radius: 2px;
+                        paintable: root.paintable;
+                        clicked => { root.paint-strip(r, i); }
+                    }
                 }
             }
-            for ch in root.channels-right: ChannelColumn { channel: ch; }
+            for ch in root.channels-right: ChannelColumn {
+                channel: ch;
+                paintable: root.paintable;
+                paint(f, i) => { root.paint-channel(ch.index, f, i); }
+            }
         }
     }
     Label { text: root.caption; }
@@ -209,6 +275,9 @@ component CasePreview inherits VerticalLayout {
 // The motherboard: one row of dots per lit channel, the onboard LEDs first.
 component BoardPreview inherits VerticalLayout {
     in property <[ColorRow]> rows;
+    in property <bool> paintable;
+    // Row as drawn, LED.
+    callback paint(int, int);
     spacing: 10px;
     alignment: end;
     HorizontalLayout {
@@ -221,10 +290,15 @@ component BoardPreview inherits VerticalLayout {
             VerticalLayout {
                 padding: 16px;
                 spacing: 8px;
-                for row in root.rows: HorizontalLayout {
+                for row[r] in root.rows: HorizontalLayout {
                     spacing: 4px;
                     alignment: start;
-                    for c in row.c: Dot { c: c; size: 10px; }
+                    for c[i] in row.c: Dot {
+                        c: c;
+                        size: 10px;
+                        paintable: root.paintable;
+                        clicked => { root.paint(r, i); }
+                    }
                 }
             }
         }
@@ -244,6 +318,11 @@ component DeskPreview inherits VerticalLayout {
     in property <color> glow;
     in property <color> wheel;
     in property <color> logo;
+    in property <bool> paintable;
+    callback paint-key(int, int);
+    // 0 logo, 1 scroll wheel, 2 underglow.
+    callback paint-mouse(int);
+    callback paint-pad();
     spacing: 10px;
     HorizontalLayout {
         alignment: start;
@@ -252,6 +331,8 @@ component DeskPreview inherits VerticalLayout {
             background: Theme.well;
             border-width: 3px;
             border-color: root.has-pad ? root.pad : Theme.line;
+            // The mat is whatever isn't the keyboard or the mouse.
+            if root.paintable && root.has-pad: TouchArea { mouse-cursor: pointer; clicked => { root.paint-pad(); } }
             HorizontalLayout {
                 padding: 18px;
                 spacing: 20px;
@@ -262,13 +343,20 @@ component DeskPreview inherits VerticalLayout {
                         background: #14171B;
                         border-width: 1px;
                         border-color: Theme.line;
+                        // Keep clicks between keys from painting the mat.
+                        if root.paintable: TouchArea { }
                         VerticalLayout {
                             padding: 12px;
                             spacing: 3px;
-                            for row in root.keyboard: HorizontalLayout {
+                            for row[r] in root.keyboard: HorizontalLayout {
                                 spacing: 3px;
                                 alignment: start;
-                                for c in row.c: Dot { c: c; size: root.dot; }
+                                for c[i] in row.c: Dot {
+                                    c: c;
+                                    size: root.dot;
+                                    paintable: root.paintable;
+                                    clicked => { root.paint-key(r, i); }
+                                }
                             }
                         }
                     }
@@ -282,8 +370,26 @@ component DeskPreview inherits VerticalLayout {
                         background: #1A1D22;
                         border-width: 2px;
                         border-color: root.glow;
-                        Rectangle { x: 21px; y: 10px; width: 6px; height: 14px; border-radius: 3px; background: root.wheel; }
-                        Rectangle { x: 18px; y: 46px; width: 12px; height: 12px; border-radius: 6px; background: root.logo; }
+                        // The body stands for the underglow around it.
+                        if root.paintable: TouchArea { mouse-cursor: pointer; clicked => { root.paint-mouse(2); } }
+                        Dot {
+                            x: 21px;
+                            y: 10px;
+                            width: 6px;
+                            height: 14px;
+                            c: root.wheel;
+                            paintable: root.paintable;
+                            clicked => { root.paint-mouse(1); }
+                        }
+                        Dot {
+                            x: 18px;
+                            y: 46px;
+                            size: 12px;
+                            radius: 6px;
+                            c: root.logo;
+                            paintable: root.paintable;
+                            clicked => { root.paint-mouse(0); }
+                        }
                     }
                 }
                 // A mat alone still needs some size to show its glow.
@@ -308,6 +414,10 @@ component SetupPreview inherits VerticalLayout {
     in property <bool> has-mouse;
     in property <bool> has-pad;
     in property <string> case-caption;
+    in property <bool> paintable;
+    // Device id, then (row, fan, LED) for ARGB channels and (row, 0, LED)
+    // for everything else; see `Views::cells`.
+    callback paint(string, int, int, int);
     alignment: start;
     if root.wide: HorizontalLayout {
         spacing: 28px;
@@ -317,8 +427,15 @@ component SetupPreview inherits VerticalLayout {
             channels-right: root.setup.channels-right;
             strips: root.setup.case-strips;
             caption: root.case-caption;
+            paintable: root.paintable;
+            paint-channel(c, f, i) => { root.paint("argb", c, f, i); }
+            paint-strip(r, i) => { root.paint("case", r, 0, i); }
         }
-        if root.setup.motherboard.length > 0: BoardPreview { rows: root.setup.motherboard; }
+        if root.setup.motherboard.length > 0: BoardPreview {
+            rows: root.setup.motherboard;
+            paintable: root.paintable;
+            paint(r, i) => { root.paint("motherboard", r, 0, i); }
+        }
         if root.has-keyboard || root.has-mouse || root.has-pad: DeskPreview {
             has-keyboard: root.has-keyboard;
             has-mouse: root.has-mouse;
@@ -329,6 +446,10 @@ component SetupPreview inherits VerticalLayout {
             logo: root.setup.mouse[0];
             wheel: root.setup.mouse[1];
             glow: root.setup.mouse[2];
+            paintable: root.paintable;
+            paint-key(r, i) => { root.paint("keyboard", r, 0, i); }
+            paint-mouse(part) => { root.paint("mouse", 0, 0, part); }
+            paint-pad => { root.paint("mousepad", 0, 0, 0); }
         }
     }
     if !root.wide: VerticalLayout {
@@ -341,9 +462,16 @@ component SetupPreview inherits VerticalLayout {
                 channels-right: root.setup.channels-right;
                 strips: root.setup.case-strips;
                 caption: root.case-caption;
+                paintable: root.paintable;
+                paint-channel(c, f, i) => { root.paint("argb", c, f, i); }
+                paint-strip(r, i) => { root.paint("case", r, 0, i); }
             }
         }
-        if root.setup.motherboard.length > 0: BoardPreview { rows: root.setup.motherboard; }
+        if root.setup.motherboard.length > 0: BoardPreview {
+            rows: root.setup.motherboard;
+            paintable: root.paintable;
+            paint(r, i) => { root.paint("motherboard", r, 0, i); }
+        }
         if root.has-keyboard || root.has-mouse || root.has-pad: DeskPreview {
             has-keyboard: root.has-keyboard;
             has-mouse: root.has-mouse;
@@ -354,6 +482,10 @@ component SetupPreview inherits VerticalLayout {
             logo: root.setup.mouse[0];
             wheel: root.setup.mouse[1];
             glow: root.setup.mouse[2];
+            paintable: root.paintable;
+            paint-key(r, i) => { root.paint("keyboard", r, 0, i); }
+            paint-mouse(part) => { root.paint("mouse", 0, 0, part); }
+            paint-pad => { root.paint("mousepad", 0, 0, 0); }
         }
     }
 }
@@ -434,6 +566,16 @@ export component AppWindow inherits Window {
     callback set-speed(float);
     callback set-reverse(bool);
     callback set-zone(string, int);
+    // Painting single LEDs: the setup with the profile's paint on top.
+    in property <SetupView> paint-setup;
+    in property <bool> has-paint;
+    // 0 paint LED, 1 erase LED, 2 fill device, 3 erase device.
+    in-out property <int> paint-tool: 0;
+    in-out property <color> paint-color: #ff2040;
+    callback paint-led(string, int, int, int);
+    callback paint-hex(string);
+    callback clear-paint();
+    property <bool> picking-paint;
 
     // ARGB channels
     in property <[PortRow]> port-rows;
@@ -918,6 +1060,69 @@ export component AppWindow inherits Window {
                                             }
                                         }
                                     }
+                                }
+                            }
+                        }
+
+                        // Paint single LEDs on top of the effect.
+                        Card {
+                            VerticalLayout {
+                                padding: 20px;
+                                spacing: 16px;
+                                HorizontalLayout {
+                                    // As tall as the link, so it can come and go without the lights moving.
+                                    min-height: 32px;
+                                    spacing: 12px;
+                                    Heading { text: "Paint lights"; vertical-alignment: center; }
+                                    Rectangle { horizontal-stretch: 1; }
+                                    if root.has-paint: LinkButton { text: "Erase all"; clicked => { root.clear-paint(); } }
+                                }
+                                Text {
+                                    text: "Click a light to give it its own color. Painted lights keep their color while the effect runs around them.";
+                                    color: Theme.muted;
+                                    font-size: 13px;
+                                    wrap: word-wrap;
+                                }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+                                    Rectangle {
+                                        width: 38px;
+                                        height: 38px;
+                                        border-radius: 9px;
+                                        border-width: 2px;
+                                        border-color: root.picking-paint ? Theme.text : Theme.line2;
+                                        background: root.paint-color;
+                                        accessible-role: button;
+                                        accessible-label: "Paint color";
+                                        accessible-action-default => { root.picking-paint = !root.picking-paint; }
+                                        TouchArea { mouse-cursor: pointer; clicked => { root.picking-paint = !root.picking-paint; } }
+                                    }
+                                    Rectangle { width: 8px; }
+                                    ToolButton { text: "Paint"; selected: root.paint-tool == 0; clicked => { root.paint-tool = 0; } }
+                                    ToolButton { text: "Fill device"; selected: root.paint-tool == 2; clicked => { root.paint-tool = 2; } }
+                                    ToolButton { text: "Erase"; selected: root.paint-tool == 1; clicked => { root.paint-tool = 1; } }
+                                    ToolButton { text: "Erase device"; selected: root.paint-tool == 3; clicked => { root.paint-tool = 3; } }
+                                }
+                                if root.picking-paint: HorizontalLayout {
+                                    alignment: start;
+                                    ColorPicker {
+                                        color: root.paint-color;
+                                        changed(c) => { root.paint-color = c; }
+                                        hex-entered(t) => { root.paint-hex(t); }
+                                    }
+                                }
+                                SetupPreview {
+                                    setup: root.paint-setup;
+                                    wide: root.width >= 1440px;
+                                    dot: root.width < 1180px ? 10px : 12px;
+                                    has-case: root.has-case;
+                                    has-keyboard: root.has-keyboard;
+                                    has-mouse: root.has-mouse;
+                                    has-pad: root.has-pad;
+                                    case-caption: root.case-caption;
+                                    paintable: true;
+                                    paint(d, r, f, i) => { root.paint-led(d, r, f, i); }
                                 }
                             }
                         }

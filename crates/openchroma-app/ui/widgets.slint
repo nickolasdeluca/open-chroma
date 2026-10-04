@@ -466,6 +466,9 @@ export component FanRing inherits Rectangle {
     in property <[color]> leds;
     in property <length> size: 46px;
     in property <length> dot: 7px;
+    // Each LED can be clicked, for painting.
+    in property <bool> paintable;
+    callback clicked-led(int);
     width: size;
     height: size;
     border-radius: size / 2;
@@ -478,5 +481,12 @@ export component FanRing inherits Rectangle {
         background: c;
         x: (root.size - root.dot) / 2 + (root.size - root.dot) / 2 * 0.86 * Math.cos(i * 360deg / Math.max(1, root.leds.length));
         y: (root.size - root.dot) / 2 + (root.size - root.dot) / 2 * 0.86 * Math.sin(i * 360deg / Math.max(1, root.leds.length));
+        border-width: led.has-hover ? 1px : 0;
+        border-color: Theme.text;
+        led := TouchArea {
+            enabled: root.paintable;
+            mouse-cursor: root.paintable ? pointer : default;
+            clicked => { root.clicked-led(i); }
+        }
     }
 }

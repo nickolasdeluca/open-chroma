@@ -288,6 +288,39 @@ impl State {
         })
     }
 
+    // ------------------------------------------------------------- paint
+
+    /// Paint LEDs of a device (row, column) in the profile being edited, or
+    /// erase them with `None`.
+    pub fn paint(&mut self, device: &str, cells: &[(usize, usize)], color: Option<Color>) -> Option<Config> {
+        if cells.is_empty() {
+            return None;
+        }
+        self.edit_profile(|p| {
+            let before = p.paint.clone();
+            let rows = p.paint.entry(device.to_string()).or_default();
+            for &(r, c) in cells {
+                if rows.len() <= r {
+                    rows.resize(r + 1, Vec::new());
+                }
+                if rows[r].len() <= c {
+                    rows[r].resize(c + 1, None);
+                }
+                rows[r][c] = color;
+            }
+            p.trim_paint();
+            p.paint != before
+        })
+    }
+
+    pub fn erase_device(&mut self, device: &str) -> Option<Config> {
+        self.edit_profile(|p| p.paint.remove(device).is_some())
+    }
+
+    pub fn erase_all(&mut self) -> Option<Config> {
+        self.edit_profile(|p| !std::mem::take(&mut p.paint).is_empty())
+    }
+
     // ------------------------------------------------------------- ARGB ports
 
     pub fn ports(&self) -> Vec<ArgbChannel> {
@@ -440,6 +473,26 @@ mod tests {
         let p = &s.ports()[3];
         assert_eq!((p.fans.len(), p.leds), (5, 80));
         assert_eq!(p.chroma_link_led, None);
+    }
+
+    #[test]
+    fn painting_and_erasing_leaves_no_residue() {
+        let mut s = state();
+        let red = hex("#ff0000");
+        let cfg = s.paint("keyboard", &[(1, 3), (1, 4)], Some(red)).unwrap();
+        let p = cfg.profiles.iter().find(|p| p.name == s.editing).unwrap();
+        assert_eq!(p.painted("keyboard", 1, 4), Some(red));
+        assert_eq!(p.painted("keyboard", 1, 2), None);
+        assert!(s.paint("keyboard", &[(1, 3)], Some(red)).is_none(), "repainting is no change");
+
+        s.paint("keyboard", &[(1, 4)], None).unwrap();
+        let cfg = s.paint("keyboard", &[(1, 3)], None).unwrap();
+        assert!(cfg.profiles.iter().all(|p| p.paint.is_empty()));
+
+        s.paint("mouse", &[(0, 0)], Some(red)).unwrap();
+        assert!(s.erase_device("keyboard").is_none());
+        assert!(s.erase_all().is_some());
+        assert!(s.profile().unwrap().paint.is_empty());
     }
 
     #[test]

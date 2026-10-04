@@ -161,8 +161,9 @@ console, and `openchroma autostart on` starts it when you sign in.
 
 - **Lighting:** a live preview of every LED, plus your profiles, brightness, and
   whether games can take over.
-- **Profile editor:** choose the effect, its colors, speed and direction, and
-  give any device or ARGB channel its own effect.
+- **Profile editor:** choose the effect, its colors, speed and direction,
+  give any device or ARGB channel its own effect, and paint single lights (or
+  fill a whole device) with a color that stays put while the effect runs.
 - **ARGB channels:** set the LED count or the fan layout for each port, choose
   the Chroma Link LED it shows in games, and use Identify to flash a port white.
 - **Games:** see the game in control, choose which game canvas each device shows,
@@ -250,7 +251,20 @@ a device or zone:
 
 Override keys are `keyboard`, `mouse`, `mousepad`, `case`, `argb`, `motherboard`,
 `case:1`-`case:4`, `argb:1`-`argb:6`, `motherboard:0` (onboard LEDs) and
-`motherboard:1` onwards (ARGB headers). All effects run in software on every device, so the
+`motherboard:1` onwards (ARGB headers).
+
+`paint` sets single LEDs on top of the effect, per device id, row by row in the
+same order as the `preview` in `/api/status`; `null` leaves an LED to the
+effect:
+
+```json
+"paint": {
+  "keyboard": [[], [null, null, null, null, "#ff2040"]],
+  "mousepad": [["#ffffff"]]
+}
+```
+
+All effects run in software on every device, so the
 devices stay in sync. Nothing is written to device flash, so unplugging a device
 returns it to its own default.
 
