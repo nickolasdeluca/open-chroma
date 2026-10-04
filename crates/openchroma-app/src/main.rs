@@ -348,5 +348,21 @@ fn main() -> Result<(), slint::PlatformError> {
         let weak = ui.as_weak();
         thread::spawn(move || poller(weak));
     }
+
+    // Slint has no restore event, so watch for the minimized -> shown
+    // transition and force a full repaint (see `repaint` in app.slint).
+    let restore = slint::Timer::default();
+    {
+        let weak = ui.as_weak();
+        let mut was_minimized = false;
+        restore.start(slint::TimerMode::Repeated, Duration::from_millis(100), move || {
+            let Some(w) = weak.upgrade() else { return };
+            let minimized = w.window().is_minimized();
+            if was_minimized && !minimized {
+                w.set_repaint(!w.get_repaint());
+            }
+            was_minimized = minimized;
+        });
+    }
     ui.run()
 }

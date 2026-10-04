@@ -307,6 +307,9 @@ export component AppWindow inherits Window {
     in property <int> devices-total;
     in property <string> toast;
     callback start-service();
+    // Flipped by the app when the window is restored from minimized; see the
+    // overlay at the end of this component.
+    in property <bool> repaint;
 
     // Lighting
     in property <string> active-profile;
@@ -1238,5 +1241,17 @@ export component AppWindow inherits Window {
                 toast-text := Text { text: root.toast; color: Theme.bg; }
             }
         }
+    }
+
+    // The software renderer only redraws what changed, but Windows drops the
+    // window's pixels while it's minimized, so a restore can leave stale or
+    // blank areas. Both colors are fully transparent; flipping between them
+    // marks the whole window dirty without drawing anything.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        background: root.repaint ? #01000000 : #00000000;
     }
 }
