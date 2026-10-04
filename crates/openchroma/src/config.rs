@@ -26,6 +26,11 @@ pub struct Config {
     pub profiles: Vec<Profile>,
     /// The six channels of the Chroma Addressable RGB Controller.
     pub argb_channels: Vec<ArgbChannel>,
+    /// The addressable headers of an ASUS Aura motherboard, in board order.
+    /// The board cannot tell how many LEDs are plugged in, so headers
+    /// missing here stay dark.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub motherboard_headers: Vec<ArgbChannel>,
     /// Which game canvas each device (by id) shows while a game has control.
     /// Devices not listed show their natural canvas.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -66,7 +71,8 @@ pub struct Profile {
     pub name: String,
     pub effect: Effect,
     /// Per-target overrides keyed by device id ("keyboard", "mouse",
-    /// "mousepad", "case", "argb") or zone ("argb:4", "case:2").
+    /// "mousepad", "case", "argb", "motherboard") or zone ("argb:4",
+    /// "case:2", "motherboard:1").
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub overrides: BTreeMap<String, Effect>,
 }
@@ -74,7 +80,8 @@ pub struct Profile {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArgbChannel {
     pub name: String,
-    /// LEDs connected to the channel, 0-80. 0 disables it.
+    /// LEDs connected to the channel, 0-80 (0-120 on a motherboard header).
+    /// 0 disables it.
     pub leds: u8,
     /// Optional split into fans (LED counts), used for naming and so fan-
     /// shaped effects treat each fan as a ring.
@@ -110,6 +117,7 @@ impl Default for Config {
             argb_channels: (1..=6)
                 .map(|i| ArgbChannel { name: format!("Channel {i}"), leds: 0, fans: vec![], chroma_link_led: None })
                 .collect(),
+            motherboard_headers: Vec::new(),
             game_mapping: BTreeMap::new(),
         }
     }
@@ -179,6 +187,9 @@ impl Config {
         self.argb_channels.resize_with(6, || ArgbChannel { name: "Channel".into(), leds: 0, fans: vec![], chroma_link_led: None });
         for ch in &mut self.argb_channels {
             ch.leds = ch.leds.min(80);
+        }
+        for h in &mut self.motherboard_headers {
+            h.leds = h.leds.min(asus_aura::MAX_ARGB_LEDS as u8);
         }
         if self.profiles.is_empty() {
             self.profiles = Config::default().profiles;

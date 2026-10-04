@@ -235,10 +235,19 @@ impl Slot {
         Slot { info, model, layout, writer: None, retry_at: Instant::now(), status }
     }
 
+    fn set_layout(&mut self, layout: DeviceLayout) {
+        self.status.zones = layout.row_zones.clone();
+        self.status.game = layout.game;
+        self.layout = layout;
+    }
+
     fn open(&mut self, api: &HidApi, config: &Config) {
         let name = self.info.name();
         match Device::open(api, self.info.clone(), config) {
             Ok(dev) => {
+                // Some devices only tell their LED count once opened.
+                self.model = dev.model();
+                self.set_layout(layout::build(self.model, config));
                 self.status.firmware = dev.firmware();
                 self.status.serial = dev.serial();
                 self.status.error = None;
@@ -286,9 +295,7 @@ pub fn run(shared: Arc<Shared>) {
                 if slot.model.sizes_set_on_open() && lengths(&layout) != lengths(&slot.layout) {
                     slot.writer = None;
                 }
-                slot.status.zones = layout.row_zones.clone();
-                slot.status.game = layout.game;
-                slot.layout = layout;
+                slot.set_layout(layout);
             }
         }
 

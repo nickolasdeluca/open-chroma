@@ -46,8 +46,15 @@ pub fn device_id(kind: DeviceKind) -> &'static str {
 }
 
 fn seed(kind: DeviceKind, row: usize, col: usize) -> u32 {
-    (kind as u32) << 24 | (row as u32) << 12 | col as u32
+    seed_for(kind as u32, row, col)
 }
+
+fn seed_for(device: u32, row: usize, col: usize) -> u32 {
+    device << 24 | (row as u32) << 12 | col as u32
+}
+
+/// Keeps motherboard seeds apart from every `DeviceKind`.
+const MOTHERBOARD_SEED: u32 = 0x40;
 
 fn frac(i: usize, n: usize) -> f32 {
     if n <= 1 {
@@ -99,6 +106,7 @@ pub fn build(model: Model, config: &Config) -> DeviceLayout {
             let id = device_id(spec.kind);
             (id, natural_category(spec.kind), razer_rows(spec, id, config))
         }
+        Model::Aura { leds, headers } => ("motherboard", Category::ChromaLink, aura_rows(leds, headers, config)),
     };
 
     let game = config.game_mapping.get(id).map_or(Some(natural), |g| g.category());
@@ -112,6 +120,43 @@ pub fn build(model: Model, config: &Config) -> DeviceLayout {
         }
     }
     DeviceLayout { id, rows, row_zones, game }
+}
+
+/// The onboard LEDs (with the 12 V headers at the end) are zone
+/// "motherboard:0" and follow Chroma Link's main LED; addressable header n is
+/// zone "motherboard:n" and is set up like an ARGB controller channel. Rows
+/// match the board's channel order, which `backend` relies on.
+fn aura_rows(leds: u8, headers: u8, config: &Config) -> Rows {
+    let total = headers as usize + 1;
+    let mut rows = Vec::new();
+    let mut zones = Vec::new();
+    if leds > 0 {
+        let n = leds as usize;
+        rows.push(
+            (0..n)
+                .map(|i| Led {
+                    pos: LedPos { x: frac(i, n), y: 0.0, seed: seed_for(MOTHERBOARD_SEED, 0, i) },
+                    source: Some(Source::Cell(Category::ChromaLink, 0)),
+                })
+                .collect(),
+        );
+        zones.push(Some("motherboard:0".to_string()));
+    }
+    for h in 0..headers as usize {
+        let cfg = config.motherboard_headers.get(h);
+        let n = cfg.map_or(0, |c| (c.leds as usize).min(asus_aura::MAX_ARGB_LEDS));
+        let cell = cfg.and_then(|c| c.chroma_link_led).map(|l| l.min(4) as usize).unwrap_or_else(|| link_led(h));
+        rows.push(
+            (0..n)
+                .map(|i| Led {
+                    pos: LedPos { x: frac(i, n), y: frac(h + 1, total), seed: seed_for(MOTHERBOARD_SEED, h + 1, i) },
+                    source: Some(Source::Cell(Category::ChromaLink, cell)),
+                })
+                .collect(),
+        );
+        zones.push(Some(format!("motherboard:{}", h + 1)));
+    }
+    (rows, zones)
 }
 
 fn razer_rows(spec: &DeviceSpec, id: &str, config: &Config) -> Rows {
@@ -236,5 +281,23 @@ mod tests {
         let spec = razer_hid::devices::spec_for(0x0F1F).unwrap();
         let lens: Vec<_> = build(Model::Razer(spec), &cfg).rows.iter().map(Vec::len).collect();
         assert_eq!(lens, [0, 0, 0, 24, 0, 24]);
+    }
+
+    #[test]
+    fn motherboard_rows_follow_board_channels() {
+        use crate::config::ArgbChannel;
+        let mut cfg = Config::default();
+        let header = |leds| ArgbChannel { name: "h".into(), leds, fans: vec![], chroma_link_led: None };
+        cfg.motherboard_headers = vec![header(30), header(200)];
+        let layout = build(Model::Aura { leds: 8, headers: 3 }, &cfg);
+        assert_eq!(layout.id, "motherboard");
+        assert_eq!(layout.rows.iter().map(Vec::len).collect::<Vec<_>>(), [8, 30, 120, 0]);
+        assert_eq!(layout.row_zones[0].as_deref(), Some("motherboard:0"));
+        assert_eq!(layout.row_zones[3].as_deref(), Some("motherboard:3"));
+        assert_eq!(layout.rows[0][0].source, Some(Source::Cell(Category::ChromaLink, 0)));
+        assert_eq!(layout.rows[1][0].source, Some(Source::Cell(Category::ChromaLink, 1)));
+
+        // Before the board is opened its channels are unknown.
+        assert!(build(Model::Aura { leds: 0, headers: 0 }, &cfg).rows.is_empty());
     }
 }

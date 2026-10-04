@@ -3084,6 +3084,7 @@ dependencies = [
 name = "openchroma"
 version = "0.1.0"
 dependencies = [
+ "asus-aura",
  "chroma-proto",
  "hidapi",
  "log",

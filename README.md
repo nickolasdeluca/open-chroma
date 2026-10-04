@@ -3,7 +3,8 @@
 An open replacement for Razer Synapse's lighting and the Razer Chroma SDK
 service on Windows. It talks to Razer devices directly over USB HID, runs your
 own lighting profiles when you're not gaming, and lets Chroma-enabled games take
-over the lights. Games can connect through either the native SDK DLL or the
+over the lights. ASUS Aura motherboard lighting is driven the same way, with no
+Armoury Crate or OpenRGB needed. Games can connect through either the native SDK DLL or the
 REST API.
 
 ```
@@ -17,7 +18,7 @@ REST API.
                              │
           one writer thread per device, USB HID feature reports
                              ▼
-   keyboard · mouse · mousepad · case · ARGB controller
+   keyboard · mouse · mousepad · case · ARGB controller · motherboard
 ```
 
 ## Install
@@ -55,11 +56,23 @@ Verified on real hardware:
 | 0x0F13 | Lian Li O11 Dynamic Razer Edition       | 4 strips × 16               |
 | 0x0F1F | Razer Chroma Addressable RGB Controller | 6 channels × up to 80       |
 
+ASUS motherboards with the Aura USB controller (vendor 0x0B05):
+
+| PID    | Board                   | LEDs                                          |
+|--------|-------------------------|-----------------------------------------------|
+| 0x18F3 | ROG Crosshair VIII Hero | 8 onboard (incl. 2 × 12 V), 2 ARGB × up to 120 |
+
+The board reports how many LEDs and headers it has, but not what is plugged
+into the ARGB headers. Set each header's LED count in the web UI. Boards that
+drive their LEDs over SMBus (most from before 2018) aren't supported. Armoury
+Crate's lighting service can still take the board back; if the lights stop
+following OpenChroma, stop it (OpenChroma never does that for you).
+
 Device protocol details (matrix sizes, transaction ids, which HID interface takes
 commands) come from [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) and
 [OpenRazer](https://github.com/openrazer/openrazer). To add a device, append an
-entry to `crates/razer-hid/src/devices.rs` and a layout in
-`crates/openchroma/src/layout.rs`.
+entry to `crates/razer-hid/src/devices.rs` (or `crates/asus-aura/src/lib.rs`)
+and a layout in `crates/openchroma/src/layout.rs`.
 
 ## Releases
 
@@ -201,13 +214,14 @@ Chroma SDK apps draw on per-category canvases. OpenChroma maps them like this:
 | Mouse 9×7             | Basilisk V3: logo (7,3), wheel (2,3), underglow around the edge |
 | Mousepad 20 (or 15)   | Goliathus: average of the pad's LEDs                            |
 | Chroma Link 5         | O11 strips and ARGB channels, spread over Link LEDs 1-4         |
+|                       | Motherboard: onboard LEDs on Link LED 0, headers over 1-4       |
 
 Any category a game doesn't draw on keeps showing your profile. For example,
 if a game only lights the keyboard, the fans keep their profile colors. On the
 app's Games page you can choose a different canvas for any device, or
 "Nothing" to keep that device on your profile during games. These choices are
-stored as `game_mapping` in the config. You can also pin each ARGB channel to a
-specific Chroma Link LED.
+stored as `game_mapping` in the config. You can also pin each ARGB channel or
+motherboard header to a specific Chroma Link LED.
 
 The newest SDK session from an allowed app controls the lights. When it ends,
 the previous one takes over again, and when none are left, your profile comes
@@ -233,8 +247,9 @@ a device or zone:
 }
 ```
 
-Override keys are `keyboard`, `mouse`, `mousepad`, `case`, `argb`, `case:1`-`case:4`,
-and `argb:1`-`argb:6`. All effects run in software on every device, so the
+Override keys are `keyboard`, `mouse`, `mousepad`, `case`, `argb`, `motherboard`,
+`case:1`-`case:4`, `argb:1`-`argb:6`, `motherboard:0` (onboard LEDs) and
+`motherboard:1` onwards (ARGB headers). All effects run in software on every device, so the
 devices stay in sync. Nothing is written to device flash, so unplugging a device
 returns it to its own default.
 
@@ -266,7 +281,7 @@ approves one.
 | Method & path        | Body / result                                                                 |
 |----------------------|-------------------------------------------------------------------------------|
 | `GET /api/status`    | devices (connected, firmware, live LED colors), SDK sessions, active profile, brightness |
-| `GET /api/config`    | full config (profiles, ARGB channels, ...)                                    |
+| `GET /api/config`    | full config (profiles, ARGB channels, motherboard headers, ...)               |
 | `PUT /api/config`    | replace the full config; it is validated, saved, and applied immediately     |
 | `POST /api/settings` | any of `{"active_profile": "...", "brightness": 0-100, "sdk_enabled": bool}` |
 | `POST /api/identify` | `{"target": "argb:4"}` flashes a device or zone white for up to 15 s; `{"target": null}` stops |

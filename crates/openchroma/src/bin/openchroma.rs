@@ -88,12 +88,20 @@ fn report(r: std::io::Result<Vec<String>>) -> Result<(), String> {
 fn devices() -> Result<(), String> {
     let api = hidapi::HidApi::new().map_err(|e| e.to_string())?;
     let found = razer_hid::enumerate(&api);
-    if found.is_empty() {
-        println!("no supported Razer devices found");
+    let aura = asus_aura::enumerate(&api);
+    if found.is_empty() && aura.is_empty() {
+        println!("no supported devices found");
     }
     for info in found {
         let spec = info.spec;
         match razer_hid::Device::open(&api, info) {
+            Ok(dev) => println!("{:04X}  {:<42} firmware {}", spec.pid, spec.name, dev.firmware().unwrap_or_else(|e| format!("? ({e})"))),
+            Err(e) => println!("{:04X}  {:<42} cannot open: {e}", spec.pid, spec.name),
+        }
+    }
+    for info in aura {
+        let spec = info.spec;
+        match asus_aura::Device::open(&api, info) {
             Ok(dev) => println!("{:04X}  {:<42} firmware {}", spec.pid, spec.name, dev.firmware().unwrap_or_else(|e| format!("? ({e})"))),
             Err(e) => println!("{:04X}  {:<42} cannot open: {e}", spec.pid, spec.name),
         }

@@ -193,6 +193,32 @@ component CasePreview inherits VerticalLayout {
     Label { text: root.caption; }
 }
 
+// The motherboard: one row of dots per lit channel, the onboard LEDs first.
+component BoardPreview inherits VerticalLayout {
+    in property <[ColorRow]> rows;
+    spacing: 10px;
+    alignment: end;
+    HorizontalLayout {
+        alignment: start;
+        Rectangle {
+            border-radius: 10px;
+            background: Theme.well;
+            border-width: 1px;
+            border-color: Theme.line;
+            VerticalLayout {
+                padding: 16px;
+                spacing: 8px;
+                for row in root.rows: HorizontalLayout {
+                    spacing: 4px;
+                    alignment: start;
+                    for c in row.c: Dot { c: c; size: 10px; }
+                }
+            }
+        }
+    }
+    Label { text: "ASUS Aura motherboard"; }
+}
+
 // The desk mat (its border is the Goliathus' edge LED) with the keyboard and
 // mouse sitting on it, as on the real desk.
 component DeskPreview inherits VerticalLayout {
@@ -299,6 +325,7 @@ export component AppWindow inherits Window {
     in property <[ChannelPreview]> channels-right;
     in property <[ColorRow]> case-strips;
     in property <[ColorRow]> keyboard;
+    in property <[ColorRow]> motherboard;
     in property <color> mouse-glow;
     in property <color> mouse-wheel;
     in property <color> mouse-logo;
@@ -531,6 +558,7 @@ export component AppWindow inherits Window {
                                             strips: root.case-strips;
                                             caption: root.case-caption;
                                         }
+                                        if root.motherboard.length > 0: BoardPreview { rows: root.motherboard; }
                                         if root.has-keyboard || root.has-mouse || root.has-pad: DeskPreview {
                                             has-keyboard: root.has-keyboard;
                                             has-mouse: root.has-mouse;
@@ -555,6 +583,7 @@ export component AppWindow inherits Window {
                                                 caption: root.case-caption;
                                             }
                                         }
+                                        if root.motherboard.length > 0: BoardPreview { rows: root.motherboard; }
                                         if root.has-keyboard || root.has-mouse || root.has-pad: DeskPreview {
                                             has-keyboard: root.has-keyboard;
                                             has-mouse: root.has-mouse;

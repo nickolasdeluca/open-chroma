@@ -108,6 +108,12 @@
       <p class="note">LED count per channel (max 80). "Link" picks which Chroma Link LED (0-4) drives the channel in games.</p>
       <div class="actions"><button class="btn primary" id="save-channels">Save channels</button></div>
     </section>
+    <section id="headers-section" hidden>
+      <h2>Motherboard ARGB headers</h2>
+      <div id="headers"></div>
+      <p class="note">LED count per header (max 120); the board can't detect it. "Link" picks which Chroma Link LED (0-4) drives the header in games.</p>
+      <div class="actions"><button class="btn primary" id="save-headers">Save headers</button></div>
+    </section>
   </div>
 </main>
 <div class="toast" id="toast"></div>
@@ -188,6 +194,10 @@ function renderPills() {
 function zoneLabel(device, i) {
   if (device.id === 'argb' && config) return config.argb_channels[i]?.name || `Channel ${i + 1}`;
   if (device.id === 'case') return `Strip ${i + 1}`;
+  if (device.id === 'motherboard') {
+    const n = +device.zones[i]?.split(':')[1];
+    return n ? config?.motherboard_headers?.[n - 1]?.name || `ARGB header ${n}` : 'Onboard';
+  }
   if (device.id === 'mouse') return 'Logo · wheel · glow';
   if (device.id === 'keyboard') return `Row ${i + 1}`;
   return '';
@@ -197,7 +207,7 @@ function renderDevices() {
   const root = $('devices');
   if (!status) return;
   if (!status.devices.length) {
-    root.replaceChildren(el('p', { className: 'meta', textContent: 'No supported Razer devices found.' }));
+    root.replaceChildren(el('p', { className: 'meta', textContent: 'No supported devices found.' }));
     return;
   }
   // Rebuild structure only when the device set changes; otherwise just recolor.
@@ -361,25 +371,52 @@ function renderEditor() {
   );
 }
 
+function channelEditor(ch, label, max) {
+  const name = el('input', { type: 'text', value: ch.name });
+  const leds = el('input', { type: 'number', min: 0, max, value: ch.leds });
+  const link = el('input', { type: 'number', min: 0, max: 4, placeholder: 'auto', value: ch.chroma_link_led ?? '' });
+  name.oninput = () => { ch.name = name.value; };
+  leds.oninput = () => { ch.leds = Math.max(0, Math.min(max, parseInt(leds.value) || 0)); };
+  link.oninput = () => { ch.chroma_link_led = link.value === '' ? null : Math.max(0, Math.min(4, parseInt(link.value) || 0)); };
+  return el('div', { className: 'chan' },
+    el('div', {}, el('label', { textContent: label }), name),
+    el('div', {}, el('label', { textContent: 'LEDs' }), leds),
+    el('div', {}, el('label', { textContent: 'Link' }), link));
+}
+
 function renderChannels() {
   if (!config) return;
-  $('channels').replaceChildren(...config.argb_channels.map((ch, i) => {
-    const name = el('input', { type: 'text', value: ch.name });
-    const leds = el('input', { type: 'number', min: 0, max: 80, value: ch.leds });
-    const link = el('input', { type: 'number', min: 0, max: 4, placeholder: 'auto', value: ch.chroma_link_led ?? '' });
-    name.oninput = () => { ch.name = name.value; };
-    leds.oninput = () => { ch.leds = Math.max(0, Math.min(80, parseInt(leds.value) || 0)); };
-    link.oninput = () => { ch.chroma_link_led = link.value === '' ? null : Math.max(0, Math.min(4, parseInt(link.value) || 0)); };
-    return el('div', { className: 'chan' },
-      el('div', {}, el('label', { textContent: `Channel ${i + 1}` }), name),
-      el('div', {}, el('label', { textContent: 'LEDs' }), leds),
-      el('div', {}, el('label', { textContent: 'Link' }), link));
-  }));
+  $('channels').replaceChildren(...config.argb_channels.map((ch, i) => channelEditor(ch, `Channel ${i + 1}`, 80)));
+}
+
+// The header count comes from the board, so redraw when it (or the config
+// being edited) changes.
+let headersDrawn = null;
+function renderHeaders() {
+  if (!config || !status) return;
+  const board = status.devices.find((d) => d.id === 'motherboard');
+  const n = board ? board.zones.filter((z) => z && z !== 'motherboard:0').length : 0;
+  if (headersDrawn?.config === config && headersDrawn.n === n) return;
+  headersDrawn = { config, n };
+  $('headers-section').hidden = !n;
+  config.motherboard_headers ??= [];
+  while (config.motherboard_headers.length < n) {
+    config.motherboard_headers.push({ name: `ARGB header ${config.motherboard_headers.length + 1}`, leds: 0 });
+  }
+  $('headers').replaceChildren(...config.motherboard_headers.slice(0, n).map((h, i) => channelEditor(h, `Header ${i + 1}`, 120)));
+}
+
+function dropAutoLinks(channels) {
+  for (const ch of channels || []) if (ch.chroma_link_led === null) delete ch.chroma_link_led;
 }
 
 $('save-channels').onclick = () => {
-  for (const ch of config.argb_channels) if (ch.chroma_link_led === null) delete ch.chroma_link_led;
+  dropAutoLinks(config.argb_channels);
   saveConfig('Channels saved');
+};
+$('save-headers').onclick = () => {
+  dropAutoLinks(config.motherboard_headers);
+  saveConfig('Headers saved');
 };
 
 let brightnessTimer;
@@ -419,6 +456,7 @@ async function poll() {
   try {
     renderPills();
     renderDevices();
+    renderHeaders();
     renderSettings();
   } catch (e) {
     console.error('render failed', e);

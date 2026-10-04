@@ -156,6 +156,7 @@ impl Channel {
 pub struct Views {
     keyboard: Leds,
     case_strips: Leds,
+    motherboard: Leds,
     channels: Vec<Channel>,
     channels_left: Rc<VecModel<ChannelPreview>>,
     channels_right: Rc<VecModel<ChannelPreview>>,
@@ -182,6 +183,7 @@ impl Views {
         let v = Views {
             keyboard: Leds::new(),
             case_strips: Leds::new(),
+            motherboard: Leds::new(),
             channels: (0..6).map(|_| Channel::new()).collect(),
             channels_left: Rc::new(VecModel::default()),
             channels_right: Rc::new(VecModel::default()),
@@ -199,6 +201,7 @@ impl Views {
         };
         ui.set_keyboard(v.keyboard.model());
         ui.set_case_strips(v.case_strips.model());
+        ui.set_motherboard(v.motherboard.model());
         ui.set_channels_left(ModelRc::from(v.channels_left.clone()));
         ui.set_channels_right(ModelRc::from(v.channels_right.clone()));
         ui.set_profiles(ModelRc::from(v.profiles.clone()));
@@ -301,6 +304,10 @@ impl Views {
         }
         caption.extend(used.iter().map(|&i| config.argb_channels[i].name.clone()));
         ui.set_case_caption(caption.join(" · ").into());
+
+        // Headers without a configured length have empty rows; leave them out.
+        let board = device("motherboard").map(preview).unwrap_or_default();
+        self.motherboard.sync(board.into_iter().filter(|r| !r.is_empty()).collect());
 
         let mouse = device("mouse").map(preview).unwrap_or_default();
         let m = mouse.first().cloned().unwrap_or_default();
@@ -409,6 +416,9 @@ impl Views {
                 zone(&format!("argb:{}", i + 1), &ch.name, &detail);
             }
         }
+        if has("motherboard") {
+            zone("motherboard", "Motherboard", "ASUS Aura");
+        }
         sync(&self.zones, zones);
     }
 
@@ -493,7 +503,7 @@ impl Views {
             }
         }
 
-        const ORDER: [&str; 5] = ["keyboard", "mouse", "mousepad", "case", "argb"];
+        const ORDER: [&str; 6] = ["keyboard", "mouse", "mousepad", "case", "argb", "motherboard"];
         let mut ordered: Vec<&Value> = devices.to_vec();
         ordered.sort_by_key(|d| ORDER.iter().position(|id| d["id"] == *id).unwrap_or(ORDER.len()));
         sync(
@@ -514,6 +524,7 @@ impl Views {
                         "mouse" => "Mouse",
                         "mousepad" => "Mousepad",
                         "case" => "Case strips",
+                        "motherboard" => "Motherboard",
                         _ => "ARGB fans",
                     };
                     Some(MappingRow {
