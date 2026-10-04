@@ -120,7 +120,7 @@ impl State {
         let name = Self::unique_name(self.config.as_ref()?, "New profile");
         self.editing = name.clone();
         self.edit(|c| {
-            c.profiles.push(Profile { name, effect: Effect::Static { color: hex("#ffffff") }, overrides: Default::default() });
+            c.profiles.push(Profile::new(name, Effect::Static { color: hex("#ffffff") }));
             true
         })
     }

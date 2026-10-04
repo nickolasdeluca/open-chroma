@@ -75,6 +75,38 @@ pub struct Profile {
     /// "case:2", "motherboard:1").
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub overrides: BTreeMap<String, Effect>,
+    /// Colors painted on single LEDs, keyed by device id, indexed like the
+    /// device's preview rows. Painted LEDs sit on top of whatever effect the
+    /// LED would otherwise show; `null` leaves an LED to the effect.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub paint: BTreeMap<String, Vec<Vec<Option<Color>>>>,
+}
+
+impl Profile {
+    pub fn new(name: impl Into<String>, effect: Effect) -> Profile {
+        Profile { name: name.into(), effect, overrides: BTreeMap::new(), paint: BTreeMap::new() }
+    }
+
+    /// The color painted on one LED of a device, if any.
+    pub fn painted(&self, device: &str, row: usize, col: usize) -> Option<Color> {
+        *self.paint.get(device)?.get(row)?.get(col)?
+    }
+
+    /// Drop trailing unpainted LEDs and empty devices, so erasing paint
+    /// leaves no residue in the config file.
+    pub fn trim_paint(&mut self) {
+        for rows in self.paint.values_mut() {
+            for row in rows.iter_mut() {
+                while row.last() == Some(&None) {
+                    row.pop();
+                }
+            }
+            while rows.last().is_some_and(Vec::is_empty) {
+                rows.pop();
+            }
+        }
+        self.paint.retain(|_, rows| !rows.is_empty());
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -99,7 +131,7 @@ fn c(hex: &str) -> Color {
 
 impl Default for Config {
     fn default() -> Self {
-        let profile = |name: &str, effect| Profile { name: name.into(), effect, overrides: BTreeMap::new() };
+        let profile = Profile::new;
         Config {
             brightness: 100,
             fps: 30,
@@ -191,6 +223,7 @@ impl Config {
         for h in &mut self.motherboard_headers {
             h.leds = h.leds.min(asus_aura::MAX_ARGB_LEDS as u8);
         }
+        self.profiles.iter_mut().for_each(Profile::trim_paint);
         if self.profiles.is_empty() {
             self.profiles = Config::default().profiles;
         }
@@ -199,5 +232,34 @@ impl Config {
 
     pub fn profile(&self) -> &Profile {
         self.profiles.iter().find(|p| p.name == self.active_profile).unwrap_or(&self.profiles[0])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paint_round_trips_and_is_trimmed() {
+        let red = c("#ff0000");
+        let mut cfg = Config::default();
+        cfg.profiles[0].paint.insert("keyboard".into(), vec![vec![None, Some(red), None], vec![None]]);
+        cfg.profiles[0].paint.insert("mouse".into(), vec![vec![None]]);
+        let cfg = cfg.normalized();
+        assert_eq!(cfg.profiles[0].paint.len(), 1);
+        assert_eq!(cfg.profiles[0].paint["keyboard"], vec![vec![None, Some(red)]]);
+
+        let back: Config = serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(back, cfg);
+        assert_eq!(back.profiles[0].painted("keyboard", 0, 1), Some(red));
+        assert_eq!(back.profiles[0].painted("keyboard", 0, 0), None);
+        assert_eq!(back.profiles[0].painted("keyboard", 5, 9), None);
+        assert_eq!(back.profiles[0].painted("case", 0, 0), None);
+    }
+
+    #[test]
+    fn profiles_without_paint_still_load() {
+        let p: Profile = serde_json::from_str(r#"{"name":"x","effect":{"type":"off"}}"#).unwrap();
+        assert!(p.paint.is_empty());
     }
 }

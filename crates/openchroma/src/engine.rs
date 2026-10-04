@@ -372,15 +372,20 @@ fn render(shared: &Shared, config: &Config, slots: &mut BTreeMap<String, Slot>) 
             .rows
             .iter()
             .zip(&layout.row_zones)
-            .map(|(row, zone)| {
+            .enumerate()
+            .map(|(r, (row, zone))| {
                 let effect = zone.as_ref().and_then(|z| profile.overrides.get(z)).unwrap_or(device_effect);
                 let identified = identify.as_deref().is_some_and(|i| i == layout.id || zone.as_deref() == Some(i));
                 row.iter()
-                    .map(|led| {
+                    .enumerate()
+                    .map(|(col, led)| {
                         if identified {
                             return flash;
                         }
-                        let c = active.and_then(|s| sdk_color(s, led)).unwrap_or_else(|| effect.render(t, led.pos));
+                        let c = active.and_then(|s| sdk_color(s, led)).unwrap_or_else(|| match profile.painted(layout.id, r, col) {
+                            Some(painted) => painted.0,
+                            None => effect.render(t, led.pos),
+                        });
                         color::scale(c, brightness)
                     })
                     .collect()
