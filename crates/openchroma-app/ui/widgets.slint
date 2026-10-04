@@ -424,8 +424,13 @@ export component Segmented inherits Rectangle {
     border-width: 1px;
     border-color: Theme.line2;
     clip: true;
+    // Inset by the border, with inner radii one pixel smaller, so the
+    // selected fill sits inside the outline instead of covering it.
     HorizontalLayout {
+        padding: root.border-width;
         Rectangle {
+            border-top-left-radius: root.border-radius - root.border-width;
+            border-bottom-left-radius: root.border-radius - root.border-width;
             background: root.second-selected ? transparent : Theme.accent-bg;
             accessible-role: button;
             accessible-label: root.first;
@@ -439,6 +444,8 @@ export component Segmented inherits Rectangle {
             TouchArea { mouse-cursor: pointer; clicked => { root.picked(false); } }
         }
         Rectangle {
+            border-top-right-radius: root.border-radius - root.border-width;
+            border-bottom-right-radius: root.border-radius - root.border-width;
             background: root.second-selected ? Theme.accent-bg : transparent;
             accessible-role: button;
             accessible-label: root.second;
