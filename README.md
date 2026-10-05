@@ -112,6 +112,15 @@ This puts `openchroma.exe`, `openchromad.exe`, `openchroma-app.exe`,
 `RzChromaSDK64.dll` and `RzChromaSDK.dll` in `dist\`. Keep them together; the
 CLI looks for the other files next to itself.
 
+The build cache in `target\` grows to several gigabytes. Once `dist\` is
+built, you can delete it with:
+
+```powershell
+.\scripts\clean.ps1
+```
+
+The next build then compiles everything again from scratch.
+
 ## Switching from Synapse
 
 Synapse and OpenChroma both write to the same devices, and Razer's SDK service

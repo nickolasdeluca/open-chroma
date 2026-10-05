@@ -17,7 +17,7 @@ Windows. It is a Cargo workspace:
 | `crates/openchroma`   | The service (`openchromad`), the CLI (`openchroma`), web UI (`assets/index.html`). |
 | `crates/rzchromasdk`  | Drop-in replacement for Razer's `RzChromaSDK64.dll` / `RzChromaSDK.dll`.   |
 | `crates/openchroma-app` | Desktop app (Slint, software renderer). UI in `ui/*.slint`; talks only to the control API. GPL-3.0. |
-| `scripts/`            | `build.ps1` (release build into `dist\`), `razer-services.ps1`.            |
+| `scripts/`            | `build.ps1` (release build into `dist\`), `clean.ps1` (deletes `target\`), `razer-services.ps1`. |
 
 Data flow: games → DLL → named pipe, or REST on `:54235` → SDK sessions →
 render loop → one writer thread per device → USB. Your profiles fill in
