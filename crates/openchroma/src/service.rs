@@ -309,6 +309,7 @@ pub fn uninstall() -> Result<Vec<String>, String> {
     done.push(format!("removed the \"{NAME}\" service"));
 
     let dir = install_dir();
+    let _ = fs::remove_dir_all(dir.join("update"));
     for name in FILES {
         let _ = fs::remove_file(old_copy(&dir, name));
         // The CLI doing the uninstall may itself live here; skip what is in use.

@@ -310,6 +310,8 @@ approves one.
 | `POST /api/settings` | any of `{"active_profile": "...", "brightness": 0-100, "sdk_enabled": bool}` |
 | `POST /api/identify` | `{"target": "argb:4"}` flashes a device or zone white for up to 15 s; `{"target": null}` stops |
 | `POST /api/apps`     | `{"title": "...", "allowed": bool}` allows or blocks an app that has used the SDK |
+| `GET /api/update`    | `current`, `latest`, `available`, release `url`, `state` (`idle`, `checking`, `downloading`, `installing`), `checked_at`, `check_error`, `error`; looks up GitHub when the last check is over 6 h old |
+| `POST /api/update`   | downloads, verifies and installs the latest release, which restarts the service; `409` if none is newer or one is already running |
 
 `GET /api/status` also reports each device's game canvas (`game`), the apps that
 have used the SDK (`apps`), who provides the system SDK DLLs (`sdk_dlls`) and the

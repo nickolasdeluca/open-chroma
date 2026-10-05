@@ -300,6 +300,11 @@ fn handle_ui(mut req: Request, shared: &Shared) {
                 _ => reply(req, 400, json!({"error": "expected {\"title\": string, \"allowed\": bool}"})),
             }
         }
+        (Method::Get, "/api/update") => reply(req, 200, crate::update::status()),
+        (Method::Post, "/api/update") if trusted => match crate::update::start() {
+            Ok(()) => reply(req, 202, json!({"ok": true})),
+            Err(e) => reply(req, 409, json!({"error": e})),
+        },
         (Method::Put | Method::Post, _) => reply(req, 403, json!({"error": "missing X-OpenChroma header"})),
         _ => reply(req, 404, json!({"error": "not found"})),
     }

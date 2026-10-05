@@ -16,6 +16,7 @@ pub mod pipe;
 pub mod sdk;
 pub mod service;
 pub mod synapse;
+pub mod update;
 
 use std::thread;
 
@@ -25,6 +26,8 @@ pub fn run_service() -> Result<(), String> {
     let listener = pipe::bind().map_err(|e| format!("cannot claim the SDK pipe ({e}); is OpenChroma already running?"))?;
     let config = config::Config::load_or_create();
     log::info!("OpenChroma {} starting; config at {}", env!("CARGO_PKG_VERSION"), config::Config::path().display());
+
+    update::clean_up_later();
 
     let shared = engine::Shared::new(config);
     http::start(shared.clone());
