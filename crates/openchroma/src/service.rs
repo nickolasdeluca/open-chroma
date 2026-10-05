@@ -164,8 +164,16 @@ fn stop_user_instances() {
     let _ = Command::new("taskkill").args(["/F", "/FI", "IMAGENAME eq openchroma.exe", "/FI", &format!("PID ne {me}")]).output();
 }
 
+/// Where [`copy_files`] moves a file it couldn't overwrite.
+fn old_copy(dir: &Path, name: &str) -> PathBuf {
+    dir.join(format!("{name}.old"))
+}
+
 fn copy_files(from: &Path, to: &Path) -> io::Result<()> {
     fs::create_dir_all(to)?;
+    for name in FILES {
+        let _ = fs::remove_file(old_copy(to, name));
+    }
     for name in FILES {
         let (src, dst) = (from.join(name), to.join(name));
         if !src.exists() {
@@ -174,7 +182,14 @@ fn copy_files(from: &Path, to: &Path) -> io::Result<()> {
         if src.canonicalize()? == dst.canonicalize().unwrap_or_default() {
             continue;
         }
-        fs::copy(&src, &dst).map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", dst.display())))?;
+        if let Err(e) = fs::copy(&src, &dst) {
+            // A running program (the app, during an update) can't be
+            // overwritten but can be renamed; the next install deletes it.
+            if !dst.exists() || fs::rename(&dst, old_copy(to, name)).is_err() {
+                return Err(io::Error::new(e.kind(), format!("{}: {e}", dst.display())));
+            }
+            fs::copy(&src, &dst).map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", dst.display())))?;
+        }
     }
     Ok(())
 }
@@ -266,9 +281,12 @@ pub fn install() -> Result<Vec<String>, String> {
         done.push("removed the old sign-in autostart entry".into());
     }
 
-    // Games need the SDK DLL; put ours in place unless Razer's is there.
-    for line in install::install_system_if_free(&target).map_err(|e| e.to_string())? {
-        done.push(line);
+    // Games need the SDK DLL; put ours in place unless Razer's is there. A
+    // running game may hold it open; the old one still talks to the new
+    // service, so that must not keep the service from starting.
+    match install::install_system_if_free(&target) {
+        Ok(lines) => done.extend(lines),
+        Err(e) => done.push(format!("warning: could not update the SDK DLLs, try again with no game running: {e}")),
     }
 
     service.start(&[] as &[&str]).map_err(describe)?;
@@ -292,6 +310,7 @@ pub fn uninstall() -> Result<Vec<String>, String> {
 
     let dir = install_dir();
     for name in FILES {
+        let _ = fs::remove_file(old_copy(&dir, name));
         // The CLI doing the uninstall may itself live here; skip what is in use.
         if fs::remove_file(dir.join(name)).is_err() && dir.join(name).exists() {
             done.push(format!("left {} (in use)", dir.join(name).display()));
