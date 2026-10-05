@@ -32,6 +32,20 @@ const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
 const STATUS_INTERVAL: Duration = Duration::from_millis(100);
 /// Identify stops by itself after this long.
 const IDENTIFY_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long after a resume to wait before reopening devices, so USB has
+/// settled.
+const RESUME_SETTLE: Duration = Duration::from_secs(2);
+
+/// Bumped on every resume from sleep or hibernation.
+static RESUMES: AtomicU64 = AtomicU64::new(0);
+
+/// Tell the render loop the system just woke up. Waking resets some
+/// controllers to their own effect while the open handle stays valid, so
+/// writes keep succeeding without showing anything (the Aura board drops out
+/// of direct mode). Reopening repeats the setup each device needs.
+pub fn system_resumed() {
+    RESUMES.fetch_add(1, Ordering::SeqCst);
+}
 
 pub fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -279,10 +293,21 @@ pub fn run(shared: Arc<Shared>) {
     let mut last_scan: Option<Instant> = None;
     let mut last_status = Instant::now();
     let mut layout_rev = shared.config_rev.load(Ordering::SeqCst);
+    let mut resumes = RESUMES.load(Ordering::SeqCst);
 
     loop {
         let tick = Instant::now();
         let config = shared.config();
+
+        let r = RESUMES.load(Ordering::SeqCst);
+        if r != resumes {
+            resumes = r;
+            log::info!("system resumed; reopening devices");
+            for slot in slots.values_mut() {
+                slot.writer = None;
+                slot.retry_at = Instant::now() + RESUME_SETTLE;
+            }
+        }
 
         let rev = shared.config_rev.load(Ordering::SeqCst);
         if rev != layout_rev {

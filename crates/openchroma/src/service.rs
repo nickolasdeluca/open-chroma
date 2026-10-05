@@ -15,8 +15,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use windows_service::service::{
-    ServiceAccess, ServiceAction, ServiceActionType, ServiceControl, ServiceControlAccept, ServiceErrorControl, ServiceExitCode,
-    ServiceFailureActions, ServiceFailureResetPeriod, ServiceInfo, ServiceStartType, ServiceState, ServiceStatus, ServiceType,
+    PowerEventParam, ServiceAccess, ServiceAction, ServiceActionType, ServiceControl, ServiceControlAccept, ServiceErrorControl,
+    ServiceExitCode, ServiceFailureActions, ServiceFailureResetPeriod, ServiceInfo, ServiceStartType, ServiceState, ServiceStatus,
+    ServiceType,
 };
 use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
@@ -65,7 +66,13 @@ fn service_main(_args: Vec<OsString>) {
             let _ = stop_tx.send(Event::Stop);
             ServiceControlHandlerResult::NoError
         }
-        ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
+        // ResumeAutomatic arrives on every wake, ResumeSuspend only when a
+        // user is present too, so it would reopen a second time.
+        ServiceControl::PowerEvent(PowerEventParam::ResumeAutomatic | PowerEventParam::ResumeCritical) => {
+            crate::engine::system_resumed();
+            ServiceControlHandlerResult::NoError
+        }
+        ServiceControl::Interrogate | ServiceControl::PowerEvent(_) => ServiceControlHandlerResult::NoError,
         _ => ServiceControlHandlerResult::NotImplemented,
     };
     let Ok(status) = service_control_handler::register(NAME, handler) else { return };
@@ -74,7 +81,7 @@ fn service_main(_args: Vec<OsString>) {
             service_type: ServiceType::OWN_PROCESS,
             current_state: state,
             controls_accepted: if state == ServiceState::Running {
-                ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN
+                ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN | ServiceControlAccept::POWER_EVENT
             } else {
                 ServiceControlAccept::empty()
             },
