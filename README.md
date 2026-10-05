@@ -44,6 +44,16 @@ For a specific version, or to uninstall:
 Your profiles and settings in `%ProgramData%\OpenChroma` are kept on update and
 uninstall.
 
+### Updates
+
+While the desktop app is open, the service checks GitHub for a newer release
+(at most every six hours) and the app shows an **Update now** button in the
+sidebar when there is one. Nothing updates unless you click it. The service
+then downloads the release, checks its SHA-256 against the release's
+`SHA256SUMS.txt`, and installs it the same way the installer does, without a
+UAC prompt. Your lights blink once while the service restarts, and the app
+restarts itself on the new version.
+
 ## Supported devices
 
 Verified on real hardware:

@@ -7,6 +7,7 @@ mod state;
 mod views;
 
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
@@ -24,17 +25,20 @@ slint::include_modules!();
 const POLL_INTERVAL: Duration = Duration::from_millis(120);
 /// The config changes rarely; fetch it less often than status.
 const CONFIG_EVERY: u32 = 5;
+/// Update state changes even more rarely (about every 3 s).
+const UPDATE_EVERY: u32 = 25;
 
 /// Requests to the service, sent from a worker so the UI never blocks.
 enum Command {
     Config(Box<Config>),
     AllowApp(String, bool),
     Identify(Option<String>),
+    Update,
 }
 
 /// Data from the poller to the UI thread.
 enum Update {
-    Online { status: Value, config: Option<Config> },
+    Online { status: Value, config: Option<Config>, update: Option<Value> },
     Offline(String),
 }
 
@@ -44,6 +48,8 @@ struct App {
     views: Views,
     status: Value,
     writer: Sender<Command>,
+    /// The service version an update the user started is replacing.
+    updating_from: Option<String>,
 }
 
 thread_local! {
@@ -96,6 +102,11 @@ fn writer(rx: Receiver<Command>, ui: Weak<AppWindow>) {
         for cmd in std::iter::once(first).chain(rx.try_iter()) {
             match cmd {
                 Command::Config(c) => latest_config = Some(c),
+                Command::Update => {
+                    if let Err(e) = client::request("app", "POST", "/api/update", None) {
+                        toast(&ui, format!("Couldn't update: {e}"));
+                    }
+                }
                 other => others.push(other),
             }
         }
@@ -109,7 +120,7 @@ fn writer(rx: Receiver<Command>, ui: Weak<AppWindow>) {
                     client::request("app", "POST", "/api/apps", Some(&json!({"title": title, "allowed": allowed})))
                 }
                 Command::Identify(target) => client::request("app", "POST", "/api/identify", Some(&json!({"target": target}))),
-                Command::Config(_) => unreachable!(),
+                Command::Config(_) | Command::Update => unreachable!(),
             });
         }
         if let Some(Err(e)) = results.into_iter().find(Result::is_err) {
@@ -137,8 +148,9 @@ fn poller(ui: Weak<AppWindow>) {
                 } else {
                     None
                 };
+                let update = if n.is_multiple_of(UPDATE_EVERY) { client::request("app", "GET", "/api/update", None).ok() } else { None };
                 n = n.wrapping_add(1);
-                Update::Online { status, config }
+                Update::Online { status, config, update }
             }
             Err(Error::Offline) => {
                 n = 0;
@@ -150,11 +162,22 @@ fn poller(ui: Weak<AppWindow>) {
         let sent = slint::invoke_from_event_loop(move || {
             let Some(w) = ui.upgrade() else { return };
             with_app(|app| match update {
-                Update::Online { status, config } => {
+                Update::Online { status, config, update } => {
                     w.set_online(true);
                     w.set_starting(false);
                     if let Some(c) = config {
                         app.state.receive(c);
+                    }
+                    if let Some(u) = update {
+                        if u["state"] == "idle" && !u["error"].is_null() {
+                            app.updating_from = None;
+                        }
+                        views::show_update(&w, &u);
+                    }
+                    let version = status["version"].as_str().unwrap_or_default();
+                    w.set_version(version.into());
+                    if app.updating_from.as_deref().is_some_and(|from| from != version) {
+                        restart(&w, version);
                     }
                     app.status = status;
                     app.refresh();
@@ -172,6 +195,34 @@ fn poller(ui: Weak<AppWindow>) {
     }
 }
 
+/// The single-instance mutex, closed early when the app restarts itself.
+static INSTANCE: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+/// The service came back on a new version after an update the user started.
+/// The installer replaced this program's file (the running copy was renamed
+/// aside), so start the new one in its place.
+fn restart(ui: &AppWindow, version: &str) {
+    let dir = openchroma::service::install_dir();
+    let installed = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d == dir)).unwrap_or(false);
+    if !installed {
+        // A development build: nothing of ours was replaced.
+        with_app(|app| app.updating_from = None);
+        ui.set_toast(format!("Updated to {version}").into());
+        return;
+    }
+    let mutex = INSTANCE.swap(std::ptr::null_mut(), Ordering::SeqCst);
+    if !mutex.is_null() {
+        unsafe { windows_sys::Win32::Foundation::CloseHandle(mutex) };
+    }
+    match std::process::Command::new(dir.join("openchroma-app.exe")).spawn() {
+        Ok(_) => std::process::exit(0),
+        Err(e) => {
+            with_app(|app| app.updating_from = None);
+            ui.set_toast(format!("Updated to {version}; reopen OpenChroma ({e})").into());
+        }
+    }
+}
+
 /// Only one window: a second launch brings the first to the front.
 fn already_running() -> bool {
     use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
@@ -179,9 +230,10 @@ fn already_running() -> bool {
     use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE};
 
     let name: Vec<u16> = "Local\\OpenChromaApp".encode_utf16().chain(Some(0)).collect();
-    // The mutex lives as long as the process; it is never closed.
+    // The mutex lives as long as the process, unless `restart` hands over.
     let mutex = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
     if mutex.is_null() || unsafe { GetLastError() } != ERROR_ALREADY_EXISTS {
+        INSTANCE.store(mutex, Ordering::SeqCst);
         return false;
     }
     let title: Vec<u16> = "OpenChroma".encode_utf16().chain(Some(0)).collect();
@@ -213,7 +265,9 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     let (tx, rx) = mpsc::channel();
     let views = Views::new(&ui);
-    APP.with(|a| *a.borrow_mut() = Some(App { ui: ui.as_weak(), state: State::new(), views, status: Value::Null, writer: tx }));
+    APP.with(|a| {
+        *a.borrow_mut() = Some(App { ui: ui.as_weak(), state: State::new(), views, status: Value::Null, writer: tx, updating_from: None })
+    });
 
     // Every UI action edits the local state and commits it.
     macro_rules! on {
@@ -344,6 +398,10 @@ fn main() -> Result<(), slint::PlatformError> {
     });
     on!(on_set_app_allowed, |app, title: slint::SharedString, allowed: bool| {
         let _ = app.writer.send(Command::AllowApp(title.to_string(), allowed));
+    });
+    on!(on_update_now, |app| {
+        app.updating_from = app.status["version"].as_str().map(str::to_owned);
+        let _ = app.writer.send(Command::Update);
     });
 
     let weak = ui.as_weak();

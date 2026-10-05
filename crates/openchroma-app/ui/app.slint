@@ -511,7 +511,15 @@ export component AppWindow inherits Window {
     in property <int> devices-connected;
     in property <int> devices-total;
     in property <string> toast;
+    in property <string> version;
     callback start-service();
+
+    // Update: the newer version ("" when none), what the service is doing
+    // about it, and why the last attempt failed.
+    in property <string> update-version;
+    in property <string> update-progress;
+    in property <string> update-error;
+    callback update-now();
     // Flipped by the app when the window is restored from minimized; see the
     // overlay at the end of this component.
     in property <bool> repaint;
@@ -631,6 +639,28 @@ export component AppWindow inherits Window {
                     NavItem { label: "ARGB channels"; icon: "argb"; active: root.page == 2; clicked => { root.page = 2; } }
                 }
                 Rectangle { vertical-stretch: 1; }
+                if root.online && root.update-version != "": Rectangle {
+                    border-radius: 12px;
+                    background: Theme.panel;
+                    border-width: 1px;
+                    border-color: Theme.accent;
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 8px;
+                        Text { text: "Update available"; color: Theme.text; font-weight: 500; }
+                        Label {
+                            text: root.update-progress != "" ? root.update-progress : "Version " + root.update-version + " is out. You have " + root.version + ".";
+                            wrap: word-wrap;
+                        }
+                        if root.update-error != "": Text { text: root.update-error; color: Theme.warn; wrap: word-wrap; font-size: 12px; }
+                        Button {
+                            text: root.update-progress != "" ? "Updating…" : "Update now";
+                            primary: true;
+                            height-hint: 36px;
+                            clicked => { if (root.update-progress == "") { root.update-now(); } }
+                        }
+                    }
+                }
                 Rectangle {
                     border-radius: 12px;
                     background: Theme.panel;
@@ -649,6 +679,7 @@ export component AppWindow inherits Window {
                             Text { text: root.online ? "Service running" : "Service not running"; color: Theme.text; font-weight: 500; }
                         }
                         Label { text: root.online ? root.devices-connected + " of " + root.devices-total + " devices connected" : "Lights are not being managed"; }
+                        if root.online && root.version != "": Label { text: "Version " + root.version; }
                     }
                 }
             }

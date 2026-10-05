@@ -702,3 +702,16 @@ fn ago(secs: u64) -> String {
         _ => format!("{} days ago", secs / 86400),
     }
 }
+
+/// The sidebar's update card, from `GET /api/update`.
+pub fn show_update(ui: &AppWindow, update: &Value) {
+    let available = update["available"] == true;
+    ui.set_update_version(if available { update["latest"].as_str().unwrap_or_default().into() } else { "".into() });
+    let progress = match update["state"].as_str() {
+        Some("downloading") => "Downloading the update…",
+        Some("installing") => "Installing. OpenChroma will restart in a moment.",
+        _ => "",
+    };
+    ui.set_update_progress(progress.into());
+    ui.set_update_error(update["error"].as_str().unwrap_or_default().into());
+}
