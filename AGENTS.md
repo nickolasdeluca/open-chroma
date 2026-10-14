@@ -45,7 +45,7 @@ DLL target is `i686-pc-windows-msvc`. If you change `rzchromasdk` or
   directly (`openchroma run`, the `bench` example), stop it with
   `openchroma service stop`, and start it again afterwards.
 - `cargo run -p razer-hid --example probe` and
-  `cargo run -p asus-aura --example probe` are read-only and safe to run at
+  `cargo run -p asus-aura --example aura-probe` are read-only and safe to run at
   any time. `bench` changes the lights.
 - To test the REST API without taking over port 54235, set
   `OPENCHROMA_SDK_PORT` for a dev instance.
