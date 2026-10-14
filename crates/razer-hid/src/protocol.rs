@@ -158,6 +158,15 @@ pub fn extended_mode_custom(tid: u8) -> Report {
     r
 }
 
+/// Ask which effect an extended-matrix LED is showing; the reply has it in
+/// `args[2]` (0x08 = custom frame).
+pub fn extended_get_effect(tid: u8, led_id: u8) -> Report {
+    let mut r = Report::new(tid, 0x0F, 0x82, 0x0C);
+    r.args[0] = STORAGE_NO_SAVE;
+    r.args[1] = led_id;
+    r
+}
+
 pub fn extended_brightness(tid: u8, led_id: u8, brightness: u8) -> Report {
     let mut r = Report::new(tid, 0x0F, 0x04, 0x03);
     r.args[0] = STORAGE_NO_SAVE;
@@ -221,5 +230,12 @@ mod tests {
     fn argb_sizes_layout() {
         let r = argb_channel_sizes(0x3F, [30, 0, 0, 0, 0, 12]);
         assert_eq!(&r.args[..13], &[6, 0x19, 30, 2, 0, 3, 0, 4, 0, 5, 0, 0x19, 12]);
+    }
+
+    #[test]
+    fn get_effect_is_the_read_form_of_set_effect() {
+        let r = extended_get_effect(0x3F, LED_ID_ZERO);
+        assert_eq!((r.command_class, r.command_id, r.data_size), (0x0F, 0x82, 0x0C));
+        assert_eq!(&r.args[..3], &[STORAGE_NO_SAVE, LED_ID_ZERO, 0]);
     }
 }

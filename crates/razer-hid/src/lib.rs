@@ -160,6 +160,13 @@ impl Device {
         self.send(&protocol::argb_channel_sizes(self.tid(), sizes))
     }
 
+    /// The effect an extended-matrix device is showing (0x08 = custom frame).
+    pub fn extended_effect(&self) -> Result<u8> {
+        let r = self.query(&protocol::extended_get_effect(self.tid(), protocol::LED_ID_ZERO))?;
+        check_status(&r)?;
+        Ok(r.args[2])
+    }
+
     /// Display a full custom frame. `rows[r]` holds the colors for matrix row
     /// `r`; a row may be shorter than the matrix width (ARGB channels) and an
     /// empty row is skipped.
