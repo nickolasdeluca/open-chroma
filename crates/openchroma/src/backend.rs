@@ -137,6 +137,15 @@ impl Device {
                         *s = ch.leds.min(spec.cols);
                     }
                     dev.set_argb_channel_sizes(sizes)?;
+                    // A frame switches the controller to its custom effect by
+                    // itself, yet once after a power loss it stayed on its own
+                    // static red while frames were sent. Log its effect to
+                    // catch that state if it comes back.
+                    match dev.extended_effect() {
+                        Ok(0x08) => {}
+                        Ok(effect) => log::info!("{} is showing its own effect {effect:#04X}", spec.name),
+                        Err(e) => log::info!("{}: could not read its effect: {e}", spec.name),
+                    }
                 }
                 // Software brightness does the dimming; make sure a previous
                 // app did not leave the hardware dimmed.
