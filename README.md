@@ -347,7 +347,7 @@ live previews, which is what the app does.
 
 ```
 cargo test --workspace
-cargo run -p razer-hid --example probe          # read-only firmware/serial query
+cargo run -p razer-hid --example probe          # read-only firmware/serial/effect query
 cargo run -p razer-hid --example bench          # frame throughput (changes lights)
 cargo run -p rzchromasdk --example smoke -- <path to DLL>   # LoadLibrary test against a running service
 ```
