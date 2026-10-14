@@ -333,8 +333,11 @@ impl State {
         let Some(port) = ports.get_mut(index) else { return };
         port.name = name.to_string();
         if is_fans {
-            let fans = fans.clamp(1, 10);
             let per = fan_leds.clamp(1, 40);
+            // A strip has no fan count, so the steppers only show a
+            // placeholder; switching to fans keeps the LEDs already there.
+            let fans = if port.fans.is_empty() && port.leds > 0 { (port.leds / per).max(1) } else { fans };
+            let fans = fans.clamp(1, 10);
             // The controller drives at most 80 LEDs per channel.
             let fit = (80 / per as usize).max(1).min(fans as usize);
             port.fans = vec![per; fit];
@@ -473,6 +476,21 @@ mod tests {
         let p = &s.ports()[3];
         assert_eq!((p.fans.len(), p.leds), (5, 80));
         assert_eq!(p.chroma_link_led, None);
+    }
+
+    #[test]
+    fn switching_a_strip_to_fans_keeps_its_leds() {
+        let mut s = state();
+        s.change_port(3, "Fans", true, 3, 8, 0, 0);
+        s.change_port(3, "Fans", false, 3, 8, 24, 0);
+        assert_eq!((s.ports()[3].leds, s.ports()[3].fans.len()), (24, 0));
+        // The editor shows 1 × 8 for a strip; that placeholder must not win.
+        s.change_port(3, "Fans", true, 1, 8, 24, 0);
+        let p = &s.ports()[3];
+        assert_eq!((p.fans.clone(), p.leds), (vec![8, 8, 8], 24));
+        // Once it is fans, the stepper's count is taken as given.
+        s.change_port(3, "Fans", true, 2, 8, 24, 0);
+        assert_eq!(s.ports()[3].leds, 16);
     }
 
     #[test]
