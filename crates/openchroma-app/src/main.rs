@@ -33,6 +33,7 @@ enum Command {
     Config(Box<Config>),
     AllowApp(String, bool),
     Identify(Option<String>),
+    Restart(String),
     Update,
 }
 
@@ -120,6 +121,7 @@ fn writer(rx: Receiver<Command>, ui: Weak<AppWindow>) {
                     client::request("app", "POST", "/api/apps", Some(&json!({"title": title, "allowed": allowed})))
                 }
                 Command::Identify(target) => client::request("app", "POST", "/api/identify", Some(&json!({"target": target}))),
+                Command::Restart(device) => client::request("app", "POST", "/api/restart", Some(&json!({"device": device}))),
                 Command::Config(_) | Command::Update => unreachable!(),
             });
         }
@@ -252,7 +254,7 @@ fn main() -> Result<(), slint::PlatformError> {
         return Ok(());
     }
     let ui = AppWindow::new()?;
-    // Development aids for screenshots: open on a page (0-3) and/or at a
+    // Development aids for screenshots: open on a page (0-4) and/or at a
     // size ("1280x820").
     if let Some(page) = std::env::var("OPENCHROMA_APP_PAGE").ok().and_then(|p| p.parse().ok()) {
         ui.set_page(page);
@@ -398,6 +400,13 @@ fn main() -> Result<(), slint::PlatformError> {
     });
     on!(on_set_app_allowed, |app, title: slint::SharedString, allowed: bool| {
         let _ = app.writer.send(Command::AllowApp(title.to_string(), allowed));
+    });
+    on!(on_set_restart_at_startup, |app, id: slint::SharedString, on: bool| {
+        let c = app.state.set_restart_at_startup(&id, on);
+        app.commit(c)
+    });
+    on!(on_restart_device, |app, id: slint::SharedString| {
+        let _ = app.writer.send(Command::Restart(id.to_string()));
     });
     on!(on_update_now, |app| {
         app.updating_from = app.status["version"].as_str().map(str::to_owned);

@@ -13,8 +13,8 @@ use slint::{Color, Model, ModelRc, SharedString, VecModel};
 
 use crate::state::{self, State, EFFECT_LABELS, MAPPING_OPTIONS, MAPPING_SOURCES, ZONE_OPTIONS};
 use crate::{
-    AppRow, AppWindow, ChannelPreview, CheckRow, ColorRow, EffectOption, EffectRow, MappingRow, PortEdit, PortRow, ProfileItem, SetupView,
-    ZoneItem,
+    AppRow, AppWindow, ChannelPreview, CheckRow, ColorRow, DeviceRow, EffectOption, EffectRow, MappingRow, PortEdit, PortRow, ProfileItem,
+    SetupView, ZoneItem,
 };
 
 fn rgb(hex: &str) -> Color {
@@ -249,6 +249,7 @@ pub struct Views {
     checks: Rc<VecModel<CheckRow>>,
     apps: Rc<VecModel<AppRow>>,
     game_devices: Rc<VecModel<SharedString>>,
+    device_rows: Rc<VecModel<DeviceRow>>,
     editor_shown: String,
 }
 
@@ -273,6 +274,7 @@ impl Views {
             checks: Rc::new(VecModel::default()),
             apps: Rc::new(VecModel::default()),
             game_devices: Rc::new(VecModel::default()),
+            device_rows: Rc::new(VecModel::default()),
             editor_shown: String::new(),
         };
         ui.set_setup(v.setup.view());
@@ -288,6 +290,7 @@ impl Views {
         ui.set_checks(ModelRc::from(v.checks.clone()));
         ui.set_apps(ModelRc::from(v.apps.clone()));
         ui.set_game_devices(ModelRc::from(v.game_devices.clone()));
+        ui.set_device_rows(ModelRc::from(v.device_rows.clone()));
         ui.set_zone_options(strings(&ZONE_OPTIONS));
         ui.set_mapping_options(strings(&MAPPING_OPTIONS));
         ui.set_link_options(strings(&[
@@ -399,6 +402,33 @@ impl Views {
         self.refresh_editor(ui, state, config, &keyboard, &case, &devices);
         self.refresh_ports(ui, state, status, &argb);
         self.refresh_games(ui, config, status, &devices);
+        self.refresh_devices(config, &devices);
+    }
+
+    fn refresh_devices(&mut self, config: &Config, devices: &[&Value]) {
+        sync(
+            &self.device_rows,
+            ordered(devices)
+                .iter()
+                .filter_map(|d| {
+                    let id = d["id"].as_str()?;
+                    let mut detail = vec![d["name"].as_str().map(friendly).unwrap_or_default()];
+                    detail.push(match (d["restarting"] == true, d["connected"] == true) {
+                        (true, _) => "restarting".into(),
+                        (false, true) => d["firmware"].as_str().map_or("connected".into(), |f| format!("firmware {f}")),
+                        (false, false) => "not connected".into(),
+                    });
+                    Some(DeviceRow {
+                        id: id.into(),
+                        name: device_kind(id).into(),
+                        detail: detail.join(" · ").into(),
+                        problem: d["restart_error"].as_str().map(|e| format!("Couldn't restart: {e}")).unwrap_or_default().into(),
+                        restart_at_startup: config.restart_at_startup.contains(id),
+                        restarting: d["restarting"] == true,
+                    })
+                })
+                .collect(),
+        );
     }
 
     fn refresh_editor(
@@ -589,12 +619,9 @@ impl Views {
             }
         }
 
-        const ORDER: [&str; 6] = ["keyboard", "mouse", "mousepad", "case", "argb", "motherboard"];
-        let mut ordered: Vec<&Value> = devices.to_vec();
-        ordered.sort_by_key(|d| ORDER.iter().position(|id| d["id"] == *id).unwrap_or(ORDER.len()));
         sync(
             &self.mapping,
-            ordered
+            ordered(devices)
                 .iter()
                 .filter_map(|d| {
                     let id = d["id"].as_str()?;
@@ -605,17 +632,9 @@ impl Views {
                         _ => GameSource::ChromaLink,
                     };
                     let current = config.game_mapping.get(id).copied().unwrap_or(natural);
-                    let name = match id {
-                        "keyboard" => "Keyboard",
-                        "mouse" => "Mouse",
-                        "mousepad" => "Mousepad",
-                        "case" => "Case strips",
-                        "motherboard" => "Motherboard",
-                        _ => "ARGB fans",
-                    };
                     Some(MappingRow {
                         id: id.into(),
-                        name: name.into(),
+                        name: device_kind(id).into(),
                         detail: d["name"].as_str().map(friendly).unwrap_or_default().into(),
                         choice: MAPPING_SOURCES.iter().position(|s| *s == current).unwrap_or(0) as i32,
                     })
@@ -678,6 +697,26 @@ impl Views {
                 })
                 .collect(),
         );
+    }
+}
+
+/// Devices in the order the pages list them.
+fn ordered<'a>(devices: &[&'a Value]) -> Vec<&'a Value> {
+    const ORDER: [&str; 6] = ["keyboard", "mouse", "mousepad", "case", "argb", "motherboard"];
+    let mut ordered = devices.to_vec();
+    ordered.sort_by_key(|d| ORDER.iter().position(|id| d["id"] == *id).unwrap_or(ORDER.len()));
+    ordered
+}
+
+/// What a device is to the user, by its id.
+fn device_kind(id: &str) -> &'static str {
+    match id {
+        "keyboard" => "Keyboard",
+        "mouse" => "Mouse",
+        "mousepad" => "Mousepad",
+        "case" => "Case strips",
+        "motherboard" => "Motherboard",
+        _ => "ARGB fans",
     }
 }
 

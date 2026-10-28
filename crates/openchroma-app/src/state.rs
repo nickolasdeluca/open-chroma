@@ -107,6 +107,10 @@ impl State {
         self.edit(|c| c.game_mapping.insert(device.to_string(), source) != Some(source))
     }
 
+    pub fn set_restart_at_startup(&mut self, device: &str, on: bool) -> Option<Config> {
+        self.edit(|c| if on { c.restart_at_startup.insert(device.to_string()) } else { c.restart_at_startup.remove(device) })
+    }
+
     // ------------------------------------------------------------- profiles
 
     fn unique_name(config: &Config, base: &str) -> String {
