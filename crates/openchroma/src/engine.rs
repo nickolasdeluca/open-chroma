@@ -61,6 +61,8 @@ pub struct Shared {
     /// Device id or zone key ("argb:4") currently flashing to be found, and
     /// since when.
     pub identify: Mutex<Option<(String, Instant)>>,
+    /// Device ids whose USB connection the user asked to restart.
+    pub restarts: Mutex<Vec<String>>,
     pub started: Instant,
 }
 
@@ -73,6 +75,7 @@ impl Shared {
             devices: Mutex::new(Vec::new()),
             apps: Mutex::new(Apps::load()),
             identify: Mutex::new(None),
+            restarts: Mutex::new(Vec::new()),
             started: Instant::now(),
         })
     }
@@ -108,6 +111,16 @@ impl Shared {
         }
         known
     }
+
+    /// Queue a restart of a device's USB connection. Returns false if no
+    /// such device is connected.
+    pub fn request_restart(&self, id: &str) -> bool {
+        let known = lock(&self.devices).iter().any(|d| d.id == id);
+        if known {
+            lock(&self.restarts).push(id.to_string());
+        }
+        known
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -124,6 +137,10 @@ pub struct DeviceStatus {
     pub zones: Vec<Option<String>>,
     /// The game canvas this device shows, if any.
     pub game: Option<Category>,
+    /// Its USB connection is being restarted.
+    pub restarting: bool,
+    /// Why the last restart failed, until the next one.
+    pub restart_error: Option<String>,
 }
 
 type Frame = Vec<Vec<Rgb>>;
@@ -138,6 +155,7 @@ struct Writer {
     mailbox: Arc<(Mutex<Mailbox>, Condvar)>,
     alive: Arc<AtomicBool>,
     error: Arc<Mutex<Option<String>>>,
+    thread: Option<thread::JoinHandle<()>>,
 }
 
 impl Writer {
@@ -146,7 +164,7 @@ impl Writer {
         let alive = Arc::new(AtomicBool::new(true));
         let error = Arc::new(Mutex::new(None));
         let name = device.name();
-        {
+        let thread = {
             let (mailbox, alive, error) = (mailbox.clone(), alive.clone(), error.clone());
             thread::Builder::new()
                 .name(format!("writer {name}"))
@@ -157,9 +175,18 @@ impl Writer {
                     }
                     alive.store(false, Ordering::SeqCst);
                 })
-                .expect("spawn device writer");
+                .expect("spawn device writer")
+        };
+        Writer { mailbox, alive, error, thread: Some(thread) }
+    }
+
+    /// Stop writing and wait until the device has been closed.
+    fn close(mut self) {
+        let thread = self.thread.take();
+        drop(self);
+        if let Some(t) = thread {
+            let _ = t.join();
         }
-        Writer { mailbox, alive, error }
     }
 
     fn post(&self, frame: Frame) {
@@ -228,6 +255,9 @@ struct Slot {
     writer: Option<Writer>,
     retry_at: Instant,
     status: DeviceStatus,
+    /// A restart of the USB connection in progress; the device stays closed
+    /// until it is done.
+    restart: Option<thread::JoinHandle<Result<(), String>>>,
 }
 
 impl Slot {
@@ -245,8 +275,59 @@ impl Slot {
             preview: Vec::new(),
             zones: layout.row_zones.clone(),
             game: layout.game,
+            restarting: false,
+            restart_error: None,
         };
-        Slot { info, model, layout, writer: None, retry_at: Instant::now(), status }
+        Slot { info, model, layout, writer: None, retry_at: Instant::now(), status, restart: None }
+    }
+
+    /// Restart the device's USB connection after `delay`, on its own thread
+    /// so the other devices keep running meanwhile.
+    fn restart(&mut self, delay: Duration) {
+        if self.restart.is_some() {
+            return;
+        }
+        let name = self.info.name();
+        let path = self.info.path().to_owned();
+        let writer = self.writer.take();
+        log::info!("restarting {name}");
+        self.status.connected = false;
+        self.status.restarting = true;
+        self.status.restart_error = None;
+        let restart = thread::Builder::new().name(format!("restart {name}")).spawn(move || {
+            if let Some(w) = writer {
+                w.close();
+            }
+            thread::sleep(delay);
+            crate::usb::restart(&path)
+        });
+        match restart {
+            Ok(t) => self.restart = Some(t),
+            Err(e) => self.restart_done(Err(e.to_string())),
+        }
+    }
+
+    /// Collect a finished restart. Returns false while it is still running.
+    fn poll_restart(&mut self) -> bool {
+        if self.restart.as_ref().is_some_and(|t| !t.is_finished()) {
+            return false;
+        }
+        if let Some(t) = self.restart.take() {
+            self.restart_done(t.join().unwrap_or_else(|_| Err("the restart crashed".into())));
+        }
+        true
+    }
+
+    fn restart_done(&mut self, result: Result<(), String>) {
+        let name = self.info.name();
+        match &result {
+            Ok(()) => log::info!("restarted {name}"),
+            Err(e) => log::warn!("could not restart {name}: {e}"),
+        }
+        self.status.restarting = false;
+        self.status.restart_error = result.err();
+        // The device drops off the bus and comes back; give it time.
+        self.retry_at = Instant::now() + RESUME_SETTLE;
     }
 
     fn set_layout(&mut self, layout: DeviceLayout) {
@@ -304,8 +385,18 @@ pub fn run(shared: Arc<Shared>) {
             resumes = r;
             log::info!("system resumed; reopening devices");
             for slot in slots.values_mut() {
-                slot.writer = None;
-                slot.retry_at = Instant::now() + RESUME_SETTLE;
+                if config.restart_at_startup.contains(slot.layout.id) {
+                    slot.restart(RESUME_SETTLE);
+                } else {
+                    slot.writer = None;
+                    slot.retry_at = Instant::now() + RESUME_SETTLE;
+                }
+            }
+        }
+
+        for id in std::mem::take(&mut *lock(&shared.restarts)) {
+            for slot in slots.values_mut().filter(|s| s.layout.id == id) {
+                slot.restart(Duration::ZERO);
             }
         }
 
@@ -325,24 +416,37 @@ pub fn run(shared: Arc<Shared>) {
         }
 
         if last_scan.is_none_or(|t| t.elapsed() >= RESCAN_INTERVAL) {
+            // Devices present when the service starts are the ones a restart
+            // at startup applies to; anything plugged in later is fresh.
+            let starting = last_scan.is_none();
             last_scan = Some(Instant::now());
             if let Err(e) = api.refresh_devices() {
                 log::warn!("HID rescan failed: {e}");
             }
             let found: BTreeMap<String, DeviceInfo> = backend::enumerate(&api).into_iter().map(|i| (i.key(), i)).collect();
             slots.retain(|key, slot| {
-                let keep = found.contains_key(key);
+                // A restarting device drops off the bus for a moment.
+                let keep = found.contains_key(key) || slot.restart.is_some();
                 if !keep {
                     log::info!("{} disconnected", slot.info.name());
                 }
                 keep
             });
             for (key, info) in found {
-                slots.entry(key).or_insert_with(|| Slot::new(info, &config));
+                slots.entry(key).or_insert_with(|| {
+                    let mut slot = Slot::new(info, &config);
+                    if starting && config.restart_at_startup.contains(slot.layout.id) {
+                        slot.restart(Duration::ZERO);
+                    }
+                    slot
+                });
             }
         }
 
         for slot in slots.values_mut() {
+            if !slot.poll_restart() {
+                continue;
+            }
             if let Some(w) = &slot.writer {
                 if !w.is_alive() {
                     slot.status.error = lock(&w.error).take();

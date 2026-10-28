@@ -1,6 +1,8 @@
 //! The vendor drivers behind one interface, so the engine can find, open and
 //! drive any supported device the same way.
 
+use std::ffi::CStr;
+
 use asus_aura::ChannelKind;
 use hidapi::HidApi;
 use razer_hid::{DeviceKind, Rgb};
@@ -54,6 +56,14 @@ impl DeviceInfo {
         match self {
             DeviceInfo::Razer(i) => i.spec.name,
             DeviceInfo::Aura(i) => i.spec.name,
+        }
+    }
+
+    /// The HID interface the device is driven through.
+    pub fn path(&self) -> &CStr {
+        match self {
+            DeviceInfo::Razer(i) => &i.control_path,
+            DeviceInfo::Aura(i) => &i.path,
         }
     }
 

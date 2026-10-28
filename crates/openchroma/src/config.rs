@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 
@@ -35,6 +35,11 @@ pub struct Config {
     /// Devices not listed show their natural canvas.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub game_mapping: BTreeMap<String, GameSource>,
+    /// Devices (by id) whose USB connection is restarted when the service
+    /// starts and when Windows wakes up, before they get any lighting. For
+    /// controllers that can come up stuck on their own colors.
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    pub restart_at_startup: BTreeSet<String>,
 }
 
 /// A Chroma SDK canvas a device can show during games, or none (the device
@@ -151,6 +156,7 @@ impl Default for Config {
                 .collect(),
             motherboard_headers: Vec::new(),
             game_mapping: BTreeMap::new(),
+            restart_at_startup: BTreeSet::new(),
         }
     }
 }
@@ -255,6 +261,18 @@ mod tests {
         assert_eq!(back.profiles[0].painted("keyboard", 0, 0), None);
         assert_eq!(back.profiles[0].painted("keyboard", 5, 9), None);
         assert_eq!(back.profiles[0].painted("case", 0, 0), None);
+    }
+
+    #[test]
+    fn restart_at_startup_is_optional_and_round_trips() {
+        let old: Config = serde_json::from_str("{}").unwrap();
+        assert!(old.restart_at_startup.is_empty());
+        assert!(!serde_json::to_string(&old).unwrap().contains("restart_at_startup"));
+
+        let mut cfg = Config::default();
+        cfg.restart_at_startup.insert("argb".into());
+        let back: Config = serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert!(back.restart_at_startup.contains("argb"));
     }
 
     #[test]

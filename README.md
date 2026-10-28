@@ -300,6 +300,12 @@ These are the problems this project was built to fix:
   reopened, which covers unplugging, USB resets, and sleep and resume.
 - The full frame is re-sent every 5 s even if nothing changed. This restores
   lighting after a device resets itself.
+- Some controllers can come up from a power loss stuck on their own colors
+  while still accepting every command, which only a USB reconnect clears.
+  Devices listed in `restart_at_startup` in the config (the app's Devices
+  page) get their USB connection restarted when the service starts and when
+  Windows wakes up, before they get any lighting. Any device can also be
+  restarted by hand from that page.
 - If another OpenChroma instance is already running, the new one refuses to
   start, so two instances never fight over the devices.
 - Logs go to `%ProgramData%\OpenChroma\openchroma.log`.
@@ -320,12 +326,14 @@ approves one.
 | `POST /api/settings` | any of `{"active_profile": "...", "brightness": 0-100, "sdk_enabled": bool}` |
 | `POST /api/identify` | `{"target": "argb:4"}` flashes a device or zone white for up to 15 s; `{"target": null}` stops |
 | `POST /api/apps`     | `{"title": "...", "allowed": bool}` allows or blocks an app that has used the SDK |
+| `POST /api/restart`  | `{"device": "argb"}` restarts a device's USB connection, like replugging it; `202` once queued, `404` if no such device is connected |
 | `GET /api/update`    | `current`, `latest`, `available`, release `url`, `state` (`idle`, `checking`, `downloading`, `installing`), `checked_at`, `check_error`, `error`; looks up GitHub when the last check is over 6 h old |
 | `POST /api/update`   | downloads, verifies and installs the latest release, which restarts the service; `409` if none is newer or one is already running |
 
-`GET /api/status` also reports each device's game canvas (`game`), the apps that
-have used the SDK (`apps`), who provides the system SDK DLLs (`sdk_dlls`) and the
-current Identify target. It is cheap enough to poll several times a second for
+`GET /api/status` also reports each device's game canvas (`game`), whether its
+USB connection is being restarted (`restarting`) and why the last restart
+failed (`restart_error`), the apps that have used the SDK (`apps`), who
+provides the system SDK DLLs (`sdk_dlls`) and the current Identify target. It is cheap enough to poll several times a second for
 live previews, which is what the app does.
 
 ## Known limitations

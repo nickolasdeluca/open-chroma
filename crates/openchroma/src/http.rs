@@ -292,6 +292,15 @@ fn handle_ui(mut req: Request, shared: &Shared) {
             *lock(&shared.identify) = b["target"].as_str().map(|t| (t.to_string(), std::time::Instant::now()));
             reply(req, 200, json!({"ok": true}))
         }
+        (Method::Post, "/api/restart") if trusted => {
+            // {"device": "argb"} restarts that device's USB connection.
+            let b = body(&mut req);
+            match b["device"].as_str() {
+                Some(id) if shared.request_restart(id) => reply(req, 202, json!({"ok": true})),
+                Some(id) => reply(req, 404, json!({"error": format!("no device {id:?}")})),
+                None => reply(req, 400, json!({"error": "expected {\"device\": string}"})),
+            }
+        }
         (Method::Post, "/api/apps") if trusted => {
             let b = body(&mut req);
             match (b["title"].as_str(), b["allowed"].as_bool()) {

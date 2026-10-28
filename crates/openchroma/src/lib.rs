@@ -17,6 +17,7 @@ pub mod sdk;
 pub mod service;
 pub mod synapse;
 pub mod update;
+pub mod usb;
 
 use std::thread;
 
