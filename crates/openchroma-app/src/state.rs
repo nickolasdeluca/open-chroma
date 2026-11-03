@@ -354,6 +354,14 @@ impl State {
         self.port_draft = Some(ports);
     }
 
+    /// Back to how a port starts out, in the draft so Discard can undo it.
+    pub fn remove_port(&mut self, index: usize) {
+        let mut ports = self.ports();
+        let Some(port) = ports.get_mut(index) else { return };
+        *port = ArgbChannel { name: format!("Channel {}", index + 1), leds: 0, fans: vec![], chroma_link_led: None };
+        self.port_draft = Some(ports);
+    }
+
     pub fn save_ports(&mut self) -> Option<Config> {
         let ports = self.port_draft.take()?;
         self.edit(|c| {
@@ -495,6 +503,27 @@ mod tests {
         // Once it is fans, the stepper's count is taken as given.
         s.change_port(3, "Fans", true, 2, 8, 24, 0);
         assert_eq!(s.ports()[3].leds, 16);
+    }
+
+    #[test]
+    fn removing_a_port_resets_it_in_the_draft() {
+        let mut s = state();
+        s.change_port(3, "Fans", true, 3, 8, 0, 2);
+        s.save_ports().unwrap();
+
+        s.remove_port(3);
+        assert_eq!(s.ports()[3], Config::default().argb_channels[3]);
+        assert_eq!(s.config.as_ref().unwrap().argb_channels[3].leds, 24, "saved only on Save");
+
+        s.discard_ports();
+        assert_eq!(s.ports()[3].leds, 24);
+
+        s.remove_port(3);
+        let cfg = s.save_ports().unwrap();
+        assert_eq!(cfg.argb_channels[3], Config::default().argb_channels[3]);
+
+        s.remove_port(99);
+        assert!(s.port_draft.is_none(), "an unknown port leaves nothing to save");
     }
 
     #[test]

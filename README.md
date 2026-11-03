@@ -184,7 +184,8 @@ console, and `openchroma autostart on` starts it when you sign in.
   give any device or ARGB channel its own effect, and paint single lights (or
   fill a whole device) with a color that stays put while the effect runs.
 - **ARGB channels:** set the LED count or the fan layout for each port, choose
-  the Chroma Link LED it shows in games, and use Identify to flash a port white.
+  the Chroma Link LED it shows in games, use Identify to flash a port white, and
+  remove a port you no longer use.
 - **Games:** see the game in control, choose which game canvas each device shows,
   check the SDK DLL and REST API status, and allow or block each app that has
   used Chroma.

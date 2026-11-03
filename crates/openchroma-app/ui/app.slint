@@ -601,6 +601,7 @@ export component AppWindow inherits Window {
     in property <bool> ports-dirty;
     in property <[string]> link-options;
     callback port-changed(int, string, bool, int, int, int, int);
+    callback port-removed(int);
     callback save-ports();
     callback discard-ports();
     callback identify(int);
@@ -1323,6 +1324,16 @@ export component AppWindow inherits Window {
                                             text: p.flashing ? "Stop identifying" : "Identify (flash white)";
                                             height-hint: 40px;
                                             clicked => { root.identify(p.flashing ? -1 : p.index); }
+                                        }
+                                        Button {
+                                            text: "Remove port";
+                                            danger: true;
+                                            height-hint: 40px;
+                                            clicked => {
+                                                // The card that could stop the flash is about to go away.
+                                                if (p.flashing) { root.identify(-1); }
+                                                root.port-removed(p.index);
+                                            }
                                         }
                                     }
                                     if !p.used: VerticalLayout {

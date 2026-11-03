@@ -386,6 +386,10 @@ fn main() -> Result<(), slint::PlatformError> {
         app.state.change_port(i as usize, &name, is_fans, clamp(fans), clamp(fan_leds), clamp(leds), link.max(0) as usize);
         app.refresh()
     });
+    on!(on_port_removed, |app, i: i32| {
+        app.state.remove_port(i as usize);
+        app.refresh()
+    });
     on!(on_save_ports, |app| {
         let c = app.state.save_ports();
         app.commit(c)
