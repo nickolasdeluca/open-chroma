@@ -26,7 +26,7 @@ REST API.
 From PowerShell:
 
 ```powershell
-irm https://github.com/nickolasdeluca/open-chroma/releases/latest/download/install.ps1 | iex
+irm https://ndworks.dev/openchroma/install.ps1 | iex
 ```
 
 The same command updates an existing install. The installer asks for
@@ -37,8 +37,8 @@ installs the service, the desktop app and the SDK DLLs (see below).
 For a specific version, or to uninstall:
 
 ```powershell
-& ([scriptblock]::Create((irm https://github.com/nickolasdeluca/open-chroma/releases/latest/download/install.ps1))) -Version 0.2.0
-& ([scriptblock]::Create((irm https://github.com/nickolasdeluca/open-chroma/releases/latest/download/install.ps1))) -Uninstall
+& ([scriptblock]::Create((irm https://ndworks.dev/openchroma/install.ps1))) -Version 0.2.0
+& ([scriptblock]::Create((irm https://ndworks.dev/openchroma/install.ps1))) -Uninstall
 ```
 
 Your profiles and settings in `%ProgramData%\OpenChroma` are kept on update and
