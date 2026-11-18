@@ -1,11 +1,15 @@
 # OpenChroma
 
-An open replacement for Razer Synapse's lighting and the Razer Chroma SDK
-service on Windows. It talks to Razer devices directly over USB HID, runs your
-own lighting profiles when you're not gaming, and lets Chroma-enabled games take
-over the lights. ASUS Aura motherboard lighting is driven the same way, with no
-Armoury Crate or OpenRGB needed. Games can connect through either the native SDK DLL or the
-REST API.
+OpenChroma's goal is to bring Chroma to every RGB ecosystem, whatever the brand:
+one app for all your lighting, with Chroma-enabled games driving every light.
+
+Today it runs on Windows and integrates Razer devices and ASUS Aura
+motherboards, and other brands are the next step. It replaces Razer Synapse's
+lighting and the Razer Chroma SDK service, talks to Razer devices directly over
+USB HID, runs your own lighting profiles when you're not gaming, and lets
+Chroma-enabled games take over the lights. ASUS Aura motherboard lighting is
+driven the same way, with no Armoury Crate or OpenRGB needed. Games can connect
+through either the native SDK DLL or the REST API.
 
 ```
  games (native)                    games / apps (REST)
@@ -55,6 +59,9 @@ UAC prompt. Your lights blink once while the service restarts, and the app
 restarts itself on the new version.
 
 ## Supported devices
+
+OpenChroma aims to support every RGB brand. These are the devices it supports
+today.
 
 Verified on real hardware:
 
